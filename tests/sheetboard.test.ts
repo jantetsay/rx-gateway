@@ -4,7 +4,7 @@ import * as repo from "@/db/repo";
 import * as t from "@/db/schema";
 import { evaluateProject } from "@/domain/evaluate";
 import { buildRow } from "@/domain/portfolio";
-import { buildSheetBoards } from "@/domain/sheetboard";
+import { buildSheetBoards, dueWeeks, weekStart } from "@/domain/sheetboard";
 import { WORKSTREAMS } from "@/domain/types";
 
 let db: DB;
@@ -68,6 +68,28 @@ describe("a client run from its tracking sheet", () => {
     expect(b.dueSoon.map((i) => i.title)).toEqual(["Train the warehouse team"]);
     expect(b.partners[0]).toMatchObject({ name: "Partner A", daysLate: 4 });
     expect(b.noOwners).toBe(true);
+    expect(b.total).toBe(5);
+    expect(b.byTab).toEqual([{ tab: "Delivery", pastDue: 2, dueSoon: 1, later: 0, noDate: 1, done: 1 }]);
+    const week = b.weeks.find((w) => w.start === "2026-11-23");
+    expect(week).toMatchObject({ pastDue: 1, upcoming: 0, isThisWeek: true });
+  });
+
+  it("buckets due dates by week and folds old work into the first bar", () => {
+    expect(weekStart("2026-11-26")).toBe("2026-11-23");
+    expect(weekStart("2026-11-23")).toBe("2026-11-23");
+    expect(weekStart("2026-11-29")).toBe("2026-11-23");
+    const w = dueWeeks([
+      { due: "2026-06-01", daysLate: 100 },
+      { due: "2026-11-20", daysLate: 4 },
+      { due: "2026-12-03", daysLate: 0 },
+      { due: "2027-06-01", daysLate: 0 },
+      { due: null, daysLate: 0 },
+    ], "2026-11-26", 2, 2);
+    expect(w.map((x) => x.start)).toEqual(["2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30", "2026-12-07"]);
+    expect(w[0].pastDue).toBe(1);
+    expect(w[1].pastDue).toBe(1);
+    expect(w[3].upcoming).toBe(1);
+    expect(w.reduce((n, x) => n + x.pastDue + x.upcoming, 0)).toBe(3);
   });
 
   it("leaves template clients with no sheet off the board", async () => {

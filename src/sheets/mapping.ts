@@ -160,6 +160,9 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
   for (const r of body) {
     const name = cell(r, c.name);
     if (!name) continue;
+    // A row with a sentence in the name column and nothing else filled is a note, not a partner.
+    const others = [c.nextStep, c.nextStepDate, c.status, c.lastContact].some((i) => cell(r, i) !== "");
+    if (!others && name.split(/\s+/).length > 5) continue;
     const p = byName.get(name) ?? { ref: `${m.tab}!${name}`, name, nextStep: null, nextStepDate: null, lastContact: null, defaultStage: m.defaultStage };
     const finished = done.has(cell(r, c.status).toLowerCase());
     const due = parseDate(cell(r, c.nextStepDate));

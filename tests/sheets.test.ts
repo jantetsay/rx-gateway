@@ -63,6 +63,12 @@ describe("sheet mapping", () => {
     expect(ps).toHaveLength(2);
     expect(ps[0]).toMatchObject({ name: "Partner A", nextStep: "Orders In", nextStepDate: "2026-11-15" });
   });
+  it("skips a note row in the partner column", () => {
+    const tabMap = mapping.tabs[1];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [...partnerRows, ["The full partner list lives in a separate workbook and is not merged here.", "", "", "", ""]]);
+    expect(ps.map((p) => p.name)).toEqual(["Partner A", "Partner B"]);
+  });
   it("names the missing column when a mapping doesn't match the sheet", () => {
     const tabMap = mapping.tabs[0];
     if (tabMap.kind !== "tasks") throw new Error();

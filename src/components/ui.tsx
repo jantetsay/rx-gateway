@@ -24,7 +24,7 @@ export function Cell({ color, children, title }: { color: Color; children?: Reac
 
 export function Card({ title, children, action, className = "" }: { title?: string; children: React.ReactNode; action?: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-lg border border-line bg-white p-4 ${className}`}>
+    <section className={`rounded-xl border border-line bg-white p-5 shadow-sm ${className}`}>
       {(title || action) && (
         <div className="mb-3 flex items-center justify-between gap-2">
           {title && <h2 className="text-base font-bold">{title}</h2>}
@@ -39,7 +39,7 @@ export function Card({ title, children, action, className = "" }: { title?: stri
 export function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: Color }) {
   const c = tone === "red" ? "text-bad" : tone === "yellow" ? "text-warn" : tone === "green" ? "text-ok" : "text-navy";
   return (
-    <div className="rounded-lg border border-line bg-card px-4 py-3">
+    <div className="rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
       <div className={`font-serif text-3xl font-bold ${c}`}>{value}</div>
       <div className="text-xs text-gray-600">{label}</div>
     </div>

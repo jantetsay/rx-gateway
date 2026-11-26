@@ -2,7 +2,7 @@
 // tracking sheet, what is open, what is past due and by how much, who owns it,
 // and where each EDI partner stands. Pure: the page passes in rows and sources.
 
-import { calendarDaysBetween, workingDaysBetween, type ISODate } from "./calendar";
+import { addDays, calendarDaysBetween, parse, workingDaysBetween, type ISODate } from "./calendar";
 import type { PortfolioRow } from "./portfolio";
 import { SHEET_PLAN } from "./template";
 
@@ -25,6 +25,12 @@ export interface SheetPartner {
   owner: string | null;
 }
 
+/** Open work in one tab, split by when it is due. */
+export interface TabSplit { tab: string; pastDue: number; dueSoon: number; later: number; noDate: number; done: number }
+
+/** Open items by the week (Monday) they are due. */
+export interface DueWeek { start: ISODate; pastDue: number; upcoming: number; isThisWeek: boolean }
+
 export interface SheetBoard {
   row: PortfolioRow;
   sheetOnly: boolean;
@@ -34,12 +40,41 @@ export interface SheetBoard {
   dueSoon: SheetItem[];
   /** Open items by tab, for the "what is open" line. */
   openByTab: { tab: string; open: number; pastDue: number }[];
+  /** Every item (open and done) the board counts. */
+  total: number;
+  byTab: TabSplit[];
+  weeks: DueWeek[];
   partners: SheetPartner[];
   /** True when no open item names an owner: the sheet probably has no owner column. */
   noOwners: boolean;
 }
 
 export interface SourceInfo { projectId: string; label: string; lastSyncedAt: string | null; lastResult: string | null }
+
+/** The Monday on or before a date. */
+export function weekStart(d: ISODate): ISODate {
+  const dow = new Date(parse(d)).getUTCDay(); // 0 Sunday
+  return addDays(d, -((dow + 6) % 7));
+}
+
+/** Weekly buckets of open dated items: up to `back` weeks before this week, and `ahead` weeks after it. */
+export function dueWeeks(items: { due: ISODate | null; daysLate: number }[], asOf: ISODate, back = 8, ahead = 6): DueWeek[] {
+  const thisWeek = weekStart(asOf);
+  const dated = items.filter((i): i is { due: ISODate; daysLate: number } => !!i.due);
+  const earliest = dated.map((i) => weekStart(i.due)).sort()[0] ?? thisWeek;
+  let start = earliest < addDays(thisWeek, -7 * back) ? addDays(thisWeek, -7 * back) : earliest;
+  if (start > thisWeek) start = thisWeek;
+  const out: DueWeek[] = [];
+  for (let w = start; w <= addDays(thisWeek, 7 * ahead); w = addDays(w, 7)) out.push({ start: w, pastDue: 0, upcoming: 0, isThisWeek: w === thisWeek });
+  for (const i of dated) {
+    let w = weekStart(i.due);
+    if (w < start) w = start; // older work folds into the first bar
+    const b = out.find((x) => x.start === w);
+    if (!b) continue; // further out than the window
+    if (i.daysLate > 0) b.pastDue++; else b.upcoming++;
+  }
+  return out;
+}
 
 const tabOf = (ref: string | null | undefined) => (ref ? ref.slice(ref.indexOf(":") + 1).split("!")[0] : "App");
 
@@ -78,8 +113,22 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       owner: person(p.ownerId),
     })).sort((a, b) => b.daysLate - a.daysLate || (a.nextStepDate ?? "9999").localeCompare(b.nextStepDate ?? "9999") || a.name.localeCompare(b.name));
 
+    const split = new Map<string, TabSplit>();
+    for (const t of tasks) {
+      const tab = tabOf(t.sourceRef);
+      const x = split.get(tab) ?? { tab, pastDue: 0, dueSoon: 0, later: 0, noDate: 0, done: 0 };
+      if (t.status === "done") x.done++;
+      else if (!t.dueDate) x.noDate++;
+      else if (t.dueDate < asOf) x.pastDue++;
+      else if (calendarDaysBetween(asOf, t.dueDate) <= dueSoonDays) x.dueSoon++;
+      else x.later++;
+      split.set(tab, x);
+    }
+
     out.push({
-      row, sheetOnly,
+      row, sheetOnly, total: tasks.length,
+      byTab: [...split.values()].sort((a, b) => (b.pastDue + b.dueSoon + b.later + b.noDate) - (a.pastDue + a.dueSoon + a.later + a.noDate)),
+      weeks: dueWeeks(items, asOf),
       sources: srcs.map(({ label, lastSyncedAt, lastResult }) => ({ label, lastSyncedAt, lastResult })),
       counts: {
         open: open.length, pastDue: pastDue.length, dueSoon: dueSoon.length, noDate: items.filter((i) => !i.due).length,

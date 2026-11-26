@@ -13,12 +13,20 @@
   --color-warn-bg: #fbebd2;
   --color-bad: #9b2c2c;
   --color-bad-bg: #f8e1e1;
+  --color-page: #f3f5fa;
+  /* Status colors for charts: fixed roles, always shown with a label or icon. */
+  --color-st-critical: #dc3c3d;
+  --color-st-warning: #fbb315;
+  --color-st-good: #0aac23;
+  --color-st-none: #9aa1ad;
+  --color-series-1: #257de0;
   --font-sans: Calibri, "Segoe UI", system-ui, sans-serif;
   --font-serif: Cambria, Georgia, serif;
 }
 
 body {
-  background: #ffffff;
+  background: var(--color-page);
+  color-scheme: light;
   color: var(--color-ink);
 }
 
