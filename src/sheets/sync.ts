@@ -16,19 +16,20 @@ export interface SyncResult {
   ok: boolean;
   message: string;
   tasks: { added: number; updated: number; removed: number };
-  partners: { added: number; updated: number };
+  partners: { added: number; updated: number; removed: number };
 }
 
 export async function syncSource(db: DB, sourceId: string, actorId: string | null, reader: TabReader = readTabs): Promise<SyncResult> {
   const [src] = await db.select().from(t.sheetSources).where(eq(t.sheetSources.id, sourceId));
   if (!src) throw new Error("No such sheet source");
-  const result: SyncResult = { ok: false, message: "", tasks: { added: 0, updated: 0, removed: 0 }, partners: { added: 0, updated: 0 } };
+  const result: SyncResult = { ok: false, message: "", tasks: { added: 0, updated: 0, removed: 0 }, partners: { added: 0, updated: 0, removed: 0 } };
   try {
     const mapping = mappingSchema.parse(src.mapping);
     const values = await reader(src.spreadsheetId, mapping.tabs.map((x) => x.tab));
     const users = await db.select().from(t.users);
     const userByName = new Map(users.map((u) => [u.name.toLowerCase(), u.id]));
     const seen = new Set<string>();
+    const seenPartners = new Set<string>();
     const prefix = `${src.id}:`;
     const now = new Date().toISOString();
 
@@ -58,14 +59,16 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
       } else {
         for (const p of mapPartnerRows(tab, rows)) {
           const ref = prefix + p.ref;
+          seenPartners.add(ref);
           const [existing] = await db.select().from(t.ediPartners).where(and(eq(t.ediPartners.projectId, src.projectId), eq(t.ediPartners.sourceRef, ref)));
-          const fields = { nextStep: p.nextStep, nextStepDate: p.nextStepDate, ...(p.lastContact ? { lastContact: p.lastContact } : {}) };
+          const fields = { nextStep: p.nextStep, nextStepDate: p.nextStepDate, sheetStatus: p.status, ...(p.lastContact ? { lastContact: p.lastContact } : {}) };
           if (existing) {
-            await db.update(t.ediPartners).set(fields).where(eq(t.ediPartners.id, existing.id));
+            // The sheet fills a method the app has none for; a method set in the app stays.
+            await db.update(t.ediPartners).set({ ...fields, ...(p.method && !existing.method ? { method: p.method } : {}) }).where(eq(t.ediPartners.id, existing.id));
             result.partners.updated++;
           } else {
             await db.insert(t.ediPartners).values({
-              id: newId(), projectId: src.projectId, name: p.name, type: "customer", inPhaseOne: "tbd", stage: p.defaultStage,
+              id: newId(), projectId: src.projectId, name: p.name, type: p.type ?? "customer", method: p.method, inPhaseOne: "tbd", stage: p.defaultStage,
               source: "sheet", sourceRef: ref, ...fields,
             });
             result.partners.added++;
@@ -83,6 +86,19 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
       await db.delete(t.dependencies).where(inArray(t.dependencies.predId, gone));
       await db.delete(t.tasks).where(inArray(t.tasks.id, gone));
       result.tasks.removed = gone.length;
+    }
+    // A partner gone from this source leaves too, unless someone has logged tests or gaps against it in the app.
+    const myPartners = await db.select({ id: t.ediPartners.id, ref: t.ediPartners.sourceRef }).from(t.ediPartners)
+      .where(and(eq(t.ediPartners.projectId, src.projectId), eq(t.ediPartners.source, "sheet")));
+    const goneP = myPartners.filter((x) => x.ref?.startsWith(prefix) && !seenPartners.has(x.ref)).map((x) => x.id);
+    if (goneP.length) {
+      const used = new Set([
+        ...(await db.select({ id: t.ediTests.partnerId }).from(t.ediTests).where(inArray(t.ediTests.partnerId, goneP))).map((x) => x.id),
+        ...(await db.select({ id: t.specGaps.partnerId }).from(t.specGaps).where(inArray(t.specGaps.partnerId, goneP))).map((x) => x.id),
+      ]);
+      const drop = goneP.filter((id) => !used.has(id));
+      if (drop.length) await db.delete(t.ediPartners).where(inArray(t.ediPartners.id, drop));
+      result.partners.removed = drop.length;
     }
     result.ok = true;
     result.message = `Read ${result.tasks.added + result.tasks.updated} items and ${result.partners.added + result.partners.updated} partners`;

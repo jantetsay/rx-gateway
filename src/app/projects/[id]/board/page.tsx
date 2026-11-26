@@ -111,7 +111,8 @@ function PartnerView({ projectId, partners, filter }: { projectId: string; partn
                     <div className="text-xs text-gray-600">{x.type === "supplier" ? "Supplier" : "Customer"}{x.method ? ` · ${x.method}` : ""}</div>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <div>{x.stage}. {x.stageLabel}</div>
+                    {x.sheetStatus ? <><div className="font-semibold">{x.sheetStatus}</div><div className="text-xs text-gray-500">App stage {x.stage}. {x.stageLabel}</div></>
+                      : <div>{x.stage}. {x.stageLabel}</div>}
                     {x.blocker && <div className="text-xs text-bad">Blocked: {x.blocker}</div>}
                   </td>
                   <td className="px-3 py-2 align-top">{x.nextStep ?? <span className="text-gray-400">None in the sheet</span>}</td>

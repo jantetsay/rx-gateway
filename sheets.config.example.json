@@ -14,7 +14,7 @@
       "tab": "EDI partners",
       "headerRow": 1,
       "defaultStage": 1,
-      "columns": { "name": "Partner", "nextStep": "Next step", "nextStepDate": "Due", "status": "Status", "lastContact": "Last contact" },
+      "columns": { "name": "Partner", "nextStep": "Next step", "nextStepDate": "Due", "status": "Status", "lastContact": "Last contact", "type": "Type", "method": "Method" },
       "doneStates": ["done", "complete", "closed"]
     }
   ]

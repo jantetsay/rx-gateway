@@ -61,6 +61,21 @@ describe("records and audit", () => {
     const again = await syncSource(db, "src1", "u1", async () => new Map([["Delivery", [["Code", "Task", "State", "Due"]]]]));
     expect(again.tasks.removed).toBe(1);
   });
+  it("takes a partner off when its source no longer lists it", async () => {
+    await db.insert(t.sheetSources).values({
+      id: "src2", projectId, label: "Register", spreadsheetId: "fake",
+      mapping: { tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status", type: "Type" } }] },
+    });
+    const head = ["Partner", "Status", "Type"];
+    const r = await syncSource(db, "src2", "u1", async () => new Map([["Connections", [head, ["Made-up Supplier", "Testing", "Supplier"], ["Made-up Customer", "Discovery", "Customer"]]]]));
+    expect(r.partners).toMatchObject({ added: 2 });
+    const [sup] = await db.select().from(t.ediPartners).where(eq(t.ediPartners.name, "Made-up Supplier"));
+    expect(sup).toMatchObject({ type: "supplier", sheetStatus: "Testing" });
+    const again = await syncSource(db, "src2", "u1", async () => new Map([["Connections", [head, ["Made-up Supplier", "Live", "Supplier"]]]]));
+    expect(again.partners).toMatchObject({ updated: 1, removed: 1 });
+    const [after] = await db.select().from(t.ediPartners).where(eq(t.ediPartners.name, "Made-up Supplier"));
+    expect(after.sheetStatus).toBe("Live");
+  });
   it("reports a sheet that can't be read without throwing", async () => {
     const r = await syncSource(db, "src1", "u1", async () => { throw new Error("The sheet isn't shared"); });
     expect(r.ok).toBe(false);

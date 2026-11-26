@@ -69,6 +69,19 @@ describe("sheet mapping", () => {
     const ps = mapPartnerRows(tabMap, [...partnerRows, ["The full partner list lives in a separate workbook and is not merged here.", "", "", "", ""]]);
     expect(ps.map((p) => p.name)).toEqual(["Partner A", "Partner B"]);
   });
+  it("reads a register's status, type and method for each partner", () => {
+    const tabMap = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status", type: "Type", method: "Method", nextStep: "Next step", nextStepDate: "Next step date" } }] }).tabs[0];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [
+      ["Partner", "Type", "Method", "Status", "Next step", "Next step date"],
+      ["Prasco", "Supplier", "AS2", "Testing", "Return test 810", "2026-12-01"],
+      ["MChest", "Customer", "SFTP (hosted)", "Testing", "", ""],
+      ["Carlsbad", "Supplier", "", "Out of Scope", "", ""],
+    ]);
+    expect(ps[0]).toMatchObject({ name: "Prasco", type: "supplier", method: "AS2", status: "Testing", nextStepDate: "2026-12-01" });
+    expect(ps[1]).toMatchObject({ type: "customer", method: "SFTP" });
+    expect(ps[2]).toMatchObject({ status: "Out of Scope", method: null });
+  });
   it("names the missing column when a mapping doesn't match the sheet", () => {
     const tabMap = mapping.tabs[0];
     if (tabMap.kind !== "tasks") throw new Error();

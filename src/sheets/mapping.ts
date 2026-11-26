@@ -39,6 +39,10 @@ const partnerTab = z.object({
     nextStepDate: z.string().optional(),
     status: z.string().optional(),
     lastContact: z.string().optional(),
+    /** "Customer" or "Supplier"; sets the type of a partner the sheet adds. */
+    type: z.string().optional(),
+    /** AS2, VAN or SFTP; sets the method when the app has none. */
+    method: z.string().optional(),
   }),
   /** Row states that mean the step is finished, so it isn't the partner's next step. */
   doneStates: z.array(z.string()).default(["done", "complete", "completed", "closed"]),
@@ -70,6 +74,10 @@ export interface SheetPartner {
   nextStepDate: string | null;
   lastContact: string | null;
   defaultStage: number;
+  /** The status cell as written, from the partner's last row. */
+  status: string | null;
+  type: "customer" | "supplier" | null;
+  method: "AS2" | "VAN" | "SFTP" | null;
 }
 
 /** Accepts 2026-11-26, 11/26/2026 and 26 Nov 2026. Anything else is no date. */
@@ -161,9 +169,9 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
     const name = cell(r, c.name);
     if (!name) continue;
     // A row with a sentence in the name column and nothing else filled is a note, not a partner.
-    const others = [c.nextStep, c.nextStepDate, c.status, c.lastContact].some((i) => cell(r, i) !== "");
+    const others = [c.nextStep, c.nextStepDate, c.status, c.lastContact].some((i) => i !== undefined && cell(r, i) !== "");
     if (!others && name.split(/\s+/).length > 5) continue;
-    const p = byName.get(name) ?? { ref: `${m.tab}!${name}`, name, nextStep: null, nextStepDate: null, lastContact: null, defaultStage: m.defaultStage };
+    const p = byName.get(name) ?? { ref: `${m.tab}!${name}`, name, nextStep: null, nextStepDate: null, lastContact: null, defaultStage: m.defaultStage, status: null, type: null, method: null };
     const finished = done.has(cell(r, c.status).toLowerCase());
     const due = parseDate(cell(r, c.nextStepDate));
     // The partner's next step is its earliest open step.
@@ -171,6 +179,11 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
       p.nextStep = cell(r, c.nextStep) || p.nextStep;
       p.nextStepDate = due ?? p.nextStepDate;
     }
+    p.status = cell(r, c.status) || p.status;
+    const type = cell(r, c.type).toLowerCase();
+    if (type.startsWith("cust")) p.type = "customer"; else if (type.startsWith("supp") || type.startsWith("vend")) p.type = "supplier";
+    const method = cell(r, c.method).toUpperCase().match(/^(AS2|VAN|SFTP)\b/);
+    if (method) p.method = method[1] as "AS2" | "VAN" | "SFTP";
     const contact = parseDate(cell(r, c.lastContact));
     if (contact && (!p.lastContact || contact > p.lastContact)) p.lastContact = contact;
     byName.set(name, p);

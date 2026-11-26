@@ -71,6 +71,8 @@ export interface EdiPartner {
   firstPassPct: number | null;
   openRejects: number | null;
   avgAckHours: number | null;
+  /** The partner's status as its tracking sheet words it (for example "Testing"), when it comes from a sheet. */
+  sheetStatus?: string | null;
   tests: EdiTest[];
   gaps: SpecGap[];
 }

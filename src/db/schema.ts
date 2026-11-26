@@ -236,6 +236,8 @@ export const ediPartners = pgTable("edi_partners", {
   avgAckHours: integer("avg_ack_hours"),
   source: text("source").notNull().default("app"),
   sourceRef: text("source_ref"),
+  /** The partner's status as its tracking sheet words it, read on each sync. */
+  sheetStatus: text("sheet_status"),
 });
 
 /** The transaction test matrix: one row per partner and transaction set. */

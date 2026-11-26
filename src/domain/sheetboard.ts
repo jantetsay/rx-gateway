@@ -30,6 +30,8 @@ export interface SheetPartner {
   stageLabel: string;
   lastContact: ISODate | null;
   blocker: string | null;
+  /** The status as the tracking sheet words it, when the partner comes from a sheet. */
+  sheetStatus: string | null;
   /** Transaction sets in the test matrix, as "850 out", with their test result. */
   sets: { label: string; testStatus: "passed" | "failed" | "not_run"; live: boolean }[];
 }
@@ -122,7 +124,7 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       id: p.id, name: p.name, nextStep: p.nextStep, nextStepDate: p.nextStepDate,
       daysLate: p.nextStepDate && p.nextStepDate < asOf ? workingDaysBetween(p.nextStepDate, asOf) : 0,
       owner: person(p.ownerId), type: p.type, method: p.method, stage: p.stage,
-      stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker,
+      stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker, sheetStatus: p.sheetStatus ?? null,
       sets: p.tests.map((t) => ({ label: `${t.transaction} ${t.direction}`, testStatus: t.testStatus, live: t.prodStatus === "live" })),
     })).sort((a, b) => b.daysLate - a.daysLate || (a.nextStepDate ?? "9999").localeCompare(b.nextStepDate ?? "9999") || a.name.localeCompare(b.name));
 
