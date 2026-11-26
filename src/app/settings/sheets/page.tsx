@@ -2,7 +2,7 @@ import { asc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import * as t from "@/db/schema";
 import { credentialStatus } from "@/sheets/google";
-import { addClient, addSheetSource, syncNow } from "@/app/actions";
+import { addClient, addSheetSource, syncNow, updateSheetMapping } from "@/app/actions";
 import { STAGE_LABEL } from "@/domain/template";
 import { STAGES } from "@/domain/types";
 import { Card, Empty, fmtDate } from "@/components/ui";
@@ -56,6 +56,15 @@ export default async function SheetsSettings({ searchParams }: { searchParams: S
                   <div className="text-xs text-gray-600">{pname.get(s.projectId) ?? s.projectId} · Last read {s.lastSyncedAt ? fmtDate(s.lastSyncedAt) : "never"}{s.lastResult ? ` · ${s.lastResult}` : ""}</div>
                 </div>
                 <form action={syncNow}><input type="hidden" name="sourceId" value={s.id} /><input type="hidden" name="back" value={back} /><Submit small>Sync now</Submit></form>
+                <details className="w-full">
+                  <summary className="cursor-pointer text-xs font-semibold text-navy">Edit mapping</summary>
+                  <form action={updateSheetMapping} className="mt-2 grid gap-2">
+                    <input type="hidden" name="sourceId" value={s.id} /><input type="hidden" name="back" value={back} />
+                    <textarea name="mapping" required rows={8} defaultValue={JSON.stringify(s.mapping, null, 2)} className="rounded border border-line p-2 font-mono text-xs" />
+                    <p className="text-xs text-gray-600">Tab and column names only. Removing a tab takes its items and partners off at the next sync, unless someone logged tests or gaps against a partner in the app.</p>
+                    <div><Submit small>Save mapping</Submit></div>
+                  </form>
+                </details>
               </li>
             ))}
           </ul>

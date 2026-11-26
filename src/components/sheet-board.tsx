@@ -1,22 +1,14 @@
-// One client's work as its tracking sheet has it: KPI tiles, where the open work
-// sits, when it was due, the past-due list, EDI partners and what is due next.
+// One client's work as its tracking sheet has it: KPI tiles, a card per work
+// stream, a stream-by-week heat map, the past-due list, EDI partners and what is due next.
 // Status colors always come with a word or an icon, never color alone.
 
 import Link from "next/link";
-import type { DueWeek, SheetBoard, TabSplit } from "@/domain/sheetboard";
+import type { SheetBoard, StreamSplit } from "@/domain/sheetboard";
+import { StreamHeatMap } from "@/components/heatmaps";
 import { STAGE_LABEL } from "@/domain/template";
 import { ColorBadge, Reasons, fmtDate } from "@/components/ui";
 
 const SHOW = 10;
-
-const ST = {
-  pastDue: { label: "Past due", fill: "var(--color-st-critical)" },
-  dueSoon: { label: "Due in 2 weeks", fill: "var(--color-st-warning)" },
-  later: { label: "Due later", fill: "var(--color-series-1)" },
-  noDate: { label: "No due date", fill: "var(--color-st-none)" },
-} as const;
-type SegKey = keyof typeof ST;
-const SEGS: SegKey[] = ["pastDue", "dueSoon", "later", "noDate"];
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "never";
@@ -67,114 +59,29 @@ function TileShell({ href, children }: { href?: string; children: React.ReactNod
   return <Link href={href} className={`${cls} text-inherit no-underline transition hover:border-navy/40 hover:shadow-md active:scale-[0.99]`}>{children}</Link>;
 }
 
-// ---------- Where the open work is: one stacked bar per tab ----------
+// ---------- One card per business work stream ----------
 
-function Legend() {
+function StreamCard({ s, href }: { s: StreamSplit; href: string }) {
+  const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+  const tone = s.pastDue ? "var(--color-st-critical)" : s.dueSoon ? "var(--color-st-warning)" : s.open ? "var(--color-navy)" : "var(--color-st-good)";
   return (
-    <ul className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
-      {SEGS.map((k) => (
-        <li key={k} className="flex items-center gap-1.5">
-          <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: ST[k].fill }} />
-          {ST[k].label}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function TabBars({ tabs }: { tabs: TabSplit[] }) {
-  const max = Math.max(1, ...tabs.map((t) => t.pastDue + t.dueSoon + t.later + t.noDate));
-  return (
-    <div>
-      <Legend />
-      <ul className="space-y-4">
-        {tabs.map((t) => {
-          const open = t.pastDue + t.dueSoon + t.later + t.noDate;
-          const segs = SEGS.filter((k) => t[k] > 0);
-          return (
-            <li key={t.tab}>
-              <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
-                <span className="font-semibold">{t.tab}</span>
-                <span className="text-xs text-gray-600">{open} open · {t.done} done</span>
-              </div>
-              {open === 0 ? <div className="text-xs text-gray-500">Nothing open.</div> : (
-                <div className="flex h-7 gap-[2px]" style={{ width: `${Math.max(8, (open / max) * 100)}%` }}>
-                  {segs.map((k, i) => (
-                    <div
-                      key={k}
-                      title={`${t.tab}: ${t[k]} ${ST[k].label.toLowerCase()}`}
-                      className={`flex items-center justify-center text-xs font-semibold ${i === 0 ? "rounded-l" : ""} ${i === segs.length - 1 ? "rounded-r" : ""}`}
-                      style={{ flexGrow: t[k], flexBasis: 0, background: ST[k].fill, color: k === "dueSoon" ? "#3a2a00" : "#fff" }}
-                    >
-                      {t[k] / open >= 0.08 ? t[k] : ""}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-// ---------- When it's due: open items by week ----------
-
-/** A bar anchored to the baseline with only its top corners rounded. */
-function barPath(x: number, y: number, w: number, h: number, r: number) {
-  const rr = Math.min(r, w / 2, h);
-  return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`;
-}
-
-function WeekChart({ weeks }: { weeks: DueWeek[] }) {
-  const W = 640, H = 200, padL = 28, padB = 26, padT = 20;
-  const n = weeks.length;
-  const max = Math.max(1, ...weeks.map((w) => w.pastDue + w.upcoming));
-  const top = max <= 4 ? max : Math.ceil(max / 4) * 4;
-  const slot = (W - padL) / Math.max(1, n);
-  const bw = Math.min(36, slot * 0.6);
-  const y = (v: number) => H - padB - (v / top) * (H - padB - padT);
-  const ticks = [...new Set([0, Math.round(top / 2), top])];
-  const thisIdx = weeks.findIndex((w) => w.isThisWeek);
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Open items by the week they are due">
-      {ticks.map((t) => (
-        <g key={t}>
-          <line x1={padL} x2={W} y1={y(t)} y2={y(t)} stroke="var(--color-line)" strokeWidth={1} />
-          <text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#6b7280">{t}</text>
-        </g>
-      ))}
-      {thisIdx >= 0 && (
-        <g>
-          <line x1={padL + slot * thisIdx + slot / 2} x2={padL + slot * thisIdx + slot / 2} y1={padT - 8} y2={H - padB} stroke="var(--color-navy)" strokeWidth={1.5} strokeDasharray="4 3" />
-          <text x={padL + slot * thisIdx + slot / 2 + 4} y={padT - 6} fontSize={11} fill="var(--color-navy)" fontWeight={600}>This week</text>
-        </g>
-      )}
-      {weeks.map((w, i) => {
-        const x = padL + slot * i + (slot - bw) / 2;
-        const total = w.pastDue + w.upcoming;
-        const segs = [
-          { v: w.pastDue, fill: "var(--color-st-critical)", label: "past due" },
-          { v: w.upcoming, fill: "var(--color-series-1)", label: "still to come" },
-        ].filter((s) => s.v > 0);
-        let base = 0;
-        return (
-          <g key={w.start}>
-            <title>{`Week of ${short(w.start)}${i === 0 && w.pastDue ? " or earlier" : ""}: ${w.pastDue} past due, ${w.upcoming} still to come`}</title>
-            <rect x={padL + slot * i} y={padT} width={slot} height={H - padB - padT} fill="transparent" />
-            {segs.map((s, j) => {
-              const yTop = y(base + s.v);
-              const h = y(base) - yTop - (j > 0 ? 2 : 0);
-              base += s.v;
-              return <path key={s.label} d={barPath(x, yTop, bw, Math.max(1, h), j === segs.length - 1 ? 4 : 0)} fill={s.fill} />;
-            })}
-            {total > 0 && <text x={x + bw / 2} y={y(total) - 5} textAnchor="middle" fontSize={11} fontWeight={600} fill="#23283a">{total}</text>}
-            {(i % 2 === 0 || w.isThisWeek) && <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize={11} fill="#6b7280">{short(w.start)}</text>}
-          </g>
-        );
-      })}
-    </svg>
+    <TileShell href={href}>
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: tone }} />
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">{s.label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="font-serif text-3xl font-bold leading-none text-navy">{s.open}</span>
+        <span className="text-xs text-gray-600">open</span>
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+        {s.pastDue > 0 ? <span className="flex items-center gap-1 font-semibold text-bad"><Icon d={I.alert} className="h-3.5 w-3.5" />{s.pastDue} past due</span> : <span className="text-gray-500">None past due</span>}
+        {s.dueSoon > 0 && <span className="flex items-center gap-1 font-semibold text-warn"><Icon d={I.clock} className="h-3.5 w-3.5" />{s.dueSoon} due soon</span>}
+        {s.noDate > 0 && <span className="text-gray-600">{s.noDate} undated</span>}
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-card" role="img" aria-label={`${s.done} of ${s.total} done`}>
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--color-series-1)" }} />
+      </div>
+      <div className="mt-1 text-[11px] text-gray-600">{s.total ? `${s.done} of ${s.total} done` : "Nothing in the sheet yet"}<span className="float-right font-semibold text-navy">Details</span></div>
+    </TileShell>
   );
 }
 
@@ -223,21 +130,20 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
         {b.noOwners && <p className="mt-2 text-xs text-gray-600">The sheet names no owners, so none show here. Add an Owner column to the sheet and map it as &quot;owner&quot; to see who has each item.</p>}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
-        <div className="rounded-xl border border-line bg-white p-5 shadow-sm lg:col-span-2">
-          <h3 className="text-base font-bold">Where the open work is</h3>
-          <p className="mb-3 text-xs text-gray-600">Open items in each tab of the sheet, by when they are due.</p>
-          {b.byTab.length ? <TabBars tabs={b.byTab} /> : <p className="text-sm text-gray-500">No items yet.</p>}
+      <div>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h3 className="text-base font-bold">Open work by work stream</h3>
+          <Link href={`/projects/${p.id}/board?view=open`} className="text-xs">Every open item, by stream</Link>
         </div>
-        <div className="rounded-xl border border-line bg-white p-5 shadow-sm lg:col-span-3">
-          <h3 className="text-base font-bold">When it&apos;s due</h3>
-          <p className="mb-2 text-xs text-gray-600">Open items by the week they were or are due. Older weeks fold into the first bar.</p>
-          <ul className="mb-2 flex flex-wrap gap-x-4 text-xs text-gray-700">
-            <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-st-critical)" }} />Past due</li>
-            <li className="flex items-center gap-1.5"><span aria-hidden className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "var(--color-series-1)" }} />Still to come</li>
-          </ul>
-          <WeekChart weeks={b.weeks} />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {b.byStream.map((s) => <StreamCard key={s.key} s={s} href={`/projects/${p.id}/board?view=open&stream=${s.key}`} />)}
         </div>
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-base font-bold">When each stream&apos;s work is due</h3>
+        <p className="mb-3 text-xs text-gray-600">Open items by work stream and the week they were or are due. Darker means more. Older weeks fold into the first column.</p>
+        <StreamHeatMap heat={b.heat} hrefFor={(stream, week) => `/projects/${p.id}/board?view=open&stream=${stream}${week ? `&week=${week}` : ""}`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">

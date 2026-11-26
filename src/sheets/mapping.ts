@@ -48,10 +48,40 @@ const partnerTab = z.object({
   doneStates: z.array(z.string()).default(["done", "complete", "completed", "closed"]),
 });
 
-export const mappingSchema = z.object({ tabs: z.array(z.discriminatedUnion("kind", [taskTab, partnerTab])).min(1) });
+/** One row per partner and transaction set, as an EDI register's transactions tab has it. */
+const setTab = z.object({
+  kind: z.literal("edi_sets"),
+  tab: z.string().min(1),
+  headerRow: z.number().int().min(1).default(1),
+  columns: z.object({
+    /** Matched to a partner by name, in any of the client's sheets. */
+    partner: z.string(),
+    set: z.string(),
+    /** "Inbound to RxERP", "in", "Outbound", "out" and the like. */
+    direction: z.string().optional(),
+    /** Where the set stands: Not started, Mapping, Testing, Certified, Live… */
+    status: z.string().optional(),
+    /** The last test's result: Passed, Failed, Pending… */
+    lastTest: z.string().optional(),
+  }),
+});
+
+export const mappingSchema = z.object({ tabs: z.array(z.discriminatedUnion("kind", [taskTab, partnerTab, setTab])).min(1) });
 export type SheetMapping = z.infer<typeof mappingSchema>;
 export type TaskTabMapping = z.infer<typeof taskTab>;
 export type PartnerTabMapping = z.infer<typeof partnerTab>;
+export type SetTabMapping = z.infer<typeof setTab>;
+
+export interface SheetSet {
+  ref: string;
+  partner: string;
+  transaction: string;
+  direction: "inbound" | "outbound";
+  testStatus: "not_run" | "passed" | "failed";
+  prodStatus: "not_live" | "live";
+  /** The status words as written, for the heat map. */
+  status: string | null;
+}
 
 export interface SheetTask {
   ref: string;
@@ -189,4 +219,27 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
     byName.set(name, p);
   }
   return [...byName.values()];
+}
+
+export function mapSetRows(m: SetTabMapping, rows: string[][]): SheetSet[] {
+  const { header, body } = table(rows, m.headerRow);
+  const c = Object.fromEntries(Object.entries(m.columns).map(([k, v]) => [k, column(header, v, m.tab)])) as Record<keyof SetTabMapping["columns"], number>;
+  const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
+  const out = new Map<string, SheetSet>();
+  for (const r of body) {
+    const partner = cell(r, c.partner);
+    const set = cell(r, c.set).match(/\b(\d{3})\b/)?.[1];
+    if (!partner || !set) continue;
+    const dir = cell(r, c.direction).toLowerCase();
+    // "Inbound to RxERP" or "in" is inbound; "Outbound from …" or "out" is outbound. No direction reads as inbound.
+    const direction = /^out|outbound|send/.test(dir) ? "outbound" : "inbound";
+    const status = cell(r, c.status) || null;
+    const test = cell(r, c.lastTest).toLowerCase();
+    const st = (status ?? "").toLowerCase();
+    const live = /\b(live|production)\b/.test(st) && !/not live/.test(st);
+    const testStatus = /fail/.test(test) || /fail/.test(st) ? "failed" : /pass|certif|approved/.test(test) || /pass|certif|approved/.test(st) || live ? "passed" : "not_run";
+    const ref = `${m.tab}!${partner}|${set}|${direction}`;
+    out.set(ref, { ref, partner, transaction: set, direction, testStatus, prodStatus: live ? "live" : "not_live", status });
+  }
+  return [...out.values()];
 }

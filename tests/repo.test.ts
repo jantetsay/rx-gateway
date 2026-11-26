@@ -76,6 +76,35 @@ describe("records and audit", () => {
     const [after] = await db.select().from(t.ediPartners).where(eq(t.ediPartners.name, "Made-up Supplier"));
     expect(after.sheetStatus).toBe("Live");
   });
+  it("reads a register's transaction sets onto its partners, and drops sets the sheet no longer lists", async () => {
+    await db.insert(t.sheetSources).values({
+      id: "src3", projectId, label: "Register with sets", spreadsheetId: "fake",
+      mapping: { tabs: [
+        { kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status" } },
+        { kind: "edi_sets", tab: "Transactions", columns: { partner: "Partner", set: "Set", direction: "Direction", status: "Map status" } },
+      ] },
+    });
+    const conn = ["Partner", "Status"];
+    const tx = ["Partner", "Set", "Direction", "Map status"];
+    const r = await syncSource(db, "src3", "u1", async () => new Map([
+      ["Connections", [conn, ["Set Partner One", "Testing"]]],
+      ["Transactions", [tx, ["Set Partner One", "850", "Inbound to RxERP", "Not started"], ["Set Partner One", "810", "Outbound from RxERP", "Live"], ["Nobody Here", "850", "in", ""]]],
+    ]));
+    expect(r.ok).toBe(true);
+    expect(r.sets).toMatchObject({ added: 2, unmatched: ["Nobody Here"] });
+    expect(r.message).toMatch(/2 transaction sets\. No partner named Nobody Here/);
+    const [p] = await db.select().from(t.ediPartners).where(eq(t.ediPartners.name, "Set Partner One"));
+    const sets = await db.select().from(t.ediTests).where(eq(t.ediTests.partnerId, p.id));
+    expect(sets.find((x) => x.transaction === "810")).toMatchObject({ direction: "outbound", prodStatus: "live", sheetStatus: "Live" });
+    const again = await syncSource(db, "src3", "u1", async () => new Map([
+      ["Connections", [conn, ["Set Partner One", "Testing"]]],
+      ["Transactions", [tx, ["Set Partner One", "850", "Inbound to RxERP", "Testing"]]],
+    ]));
+    expect(again.sets).toMatchObject({ updated: 1, removed: 1 });
+    // A partner whose only tests came from the sheet still leaves when the sheet drops it.
+    const gone = await syncSource(db, "src3", "u1", async () => new Map([["Connections", [conn]], ["Transactions", [tx]]]));
+    expect(gone.partners.removed).toBe(1);
+  });
   it("reports a sheet that can't be read without throwing", async () => {
     const r = await syncSource(db, "src1", "u1", async () => { throw new Error("The sheet isn't shared"); });
     expect(r.ok).toBe(false);

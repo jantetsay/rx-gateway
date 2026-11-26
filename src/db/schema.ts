@@ -249,6 +249,9 @@ export const ediTests = pgTable("edi_tests", {
   testStatus: text("test_status").notNull().default("not_run"),
   prodStatus: text("prod_status").notNull().default("not_live"),
   notes: text("notes"),
+  /** Set when a tracking sheet supplies this row: its status words and where it came from. */
+  sheetStatus: text("sheet_status"),
+  sourceRef: text("source_ref"),
 });
 
 export const specGaps = pgTable("spec_gaps", {

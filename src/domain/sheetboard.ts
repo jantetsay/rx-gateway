@@ -6,6 +6,7 @@ import { addDays, calendarDaysBetween, parse, workingDaysBetween, type ISODate }
 import type { PortfolioRow } from "./portfolio";
 import { EDI_STAGES } from "./edi";
 import { SHEET_PLAN } from "./template";
+import { CORE_STREAMS, STREAMS, codeOf, streamOf, type StreamKey } from "./streams";
 
 export interface SheetItem {
   id: string;
@@ -15,6 +16,9 @@ export interface SheetItem {
   daysLate: number;
   owner: string | null;
   blocked: boolean;
+  stream: StreamKey;
+  /** The heat-map column the item falls in: a week's Monday, "nodate", or null when it is further out than the map shows. */
+  week: string | null;
 }
 
 export interface SheetPartner {
@@ -32,8 +36,19 @@ export interface SheetPartner {
   blocker: string | null;
   /** The status as the tracking sheet words it, when the partner comes from a sheet. */
   sheetStatus: string | null;
-  /** Transaction sets in the test matrix, as "850 out", with their test result. */
-  sets: { label: string; testStatus: "passed" | "failed" | "not_run"; live: boolean }[];
+  /** Transaction sets in the test matrix, as "850 out", with their test result and the sheet's own status words. */
+  sets: { label: string; transaction: string; direction: "inbound" | "outbound"; testStatus: "passed" | "failed" | "not_run"; live: boolean; sheetStatus: string | null }[];
+}
+
+/** Open work in one business work stream. */
+export interface StreamSplit { key: StreamKey; label: string; open: number; pastDue: number; dueSoon: number; noDate: number; done: number; total: number }
+
+/** Open items by work stream and the week they are due: the heat map. */
+export interface StreamHeat {
+  /** Columns: weeks (Monday) then "nodate". The first week also holds anything older. */
+  columns: { key: string; label: string; past: boolean; isThisWeek: boolean; orEarlier: boolean }[];
+  rows: { key: StreamKey; label: string; cells: Record<string, number>; open: number }[];
+  max: number;
 }
 
 /** Open work in one tab, split by when it is due. */
@@ -58,6 +73,9 @@ export interface SheetBoard {
   byTab: TabSplit[];
   weeks: DueWeek[];
   partners: SheetPartner[];
+  /** One entry per work stream that has items, core streams always, in a fixed order. */
+  byStream: StreamSplit[];
+  heat: StreamHeat;
   /** True when no open item names an owner: the sheet probably has no owner column. */
   noOwners: boolean;
 }
@@ -89,6 +107,56 @@ export function dueWeeks(items: { due: ISODate | null; daysLate: number }[], asO
   return out;
 }
 
+/** The heat-map column a due date falls in, folding older weeks into the first. */
+export function weekBucket(due: ISODate | null, weeks: DueWeek[]): string | null {
+  if (!due) return "nodate";
+  if (!weeks.length) return null;
+  const w = weekStart(due);
+  if (w < weeks[0].start) return weeks[0].start;
+  return weeks.some((x) => x.start === w) ? w : null;
+}
+
+function streamSplits(all: { done: boolean; item: SheetItem }[], asOf: ISODate, dueSoonDays: number): StreamSplit[] {
+  const out = new Map<StreamKey, StreamSplit>();
+  for (const s of STREAMS) {
+    if (CORE_STREAMS.includes(s.key)) out.set(s.key, { key: s.key, label: s.label, open: 0, pastDue: 0, dueSoon: 0, noDate: 0, done: 0, total: 0 });
+  }
+  for (const { done, item: i } of all) {
+    const s = STREAMS.find((x) => x.key === i.stream)!;
+    const x = out.get(s.key) ?? { key: s.key, label: s.label, open: 0, pastDue: 0, dueSoon: 0, noDate: 0, done: 0, total: 0 };
+    x.total++;
+    if (done) x.done++;
+    else {
+      x.open++;
+      if (!i.due) x.noDate++;
+      else if (i.daysLate > 0) x.pastDue++;
+      else if (i.due >= asOf && calendarDaysBetween(asOf, i.due) <= dueSoonDays) x.dueSoon++;
+    }
+    out.set(s.key, x);
+  }
+  const order = (k: StreamKey) => STREAMS.findIndex((s) => s.key === k);
+  // Unassigned shows only while something open is in it.
+  return [...out.values()].filter((x) => x.key !== "unassigned" || x.open > 0).sort((a, b) => order(a.key) - order(b.key));
+}
+
+function streamHeat(items: SheetItem[], weeks: DueWeek[]): StreamHeat {
+  const columns = [
+    ...weeks.map((w, i) => ({
+      key: w.start, orEarlier: i === 0, label: `${new Date(`${w.start}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`,
+      past: w.start < (weeks.find((x) => x.isThisWeek)?.start ?? w.start), isThisWeek: w.isThisWeek,
+    })),
+    { key: "nodate", orEarlier: false, label: "No date", past: false, isThisWeek: false },
+  ];
+  const rows = STREAMS.filter((s) => items.some((i) => i.stream === s.key)).map((s) => {
+    const mine = items.filter((i) => i.stream === s.key);
+    const cells: Record<string, number> = {};
+    for (const i of mine) if (i.week) cells[i.week] = (cells[i.week] ?? 0) + 1;
+    return { key: s.key, label: s.label, cells, open: mine.length };
+  });
+  const max = Math.max(1, ...rows.flatMap((r) => Object.values(r.cells)));
+  return { columns, rows, max };
+}
+
 const tabOf = (ref: string | null | undefined) => (ref ? ref.slice(ref.indexOf(":") + 1).split("!")[0] : "App");
 
 export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], asOf: ISODate, dueSoonDays = 14): SheetBoard[] {
@@ -109,8 +177,11 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       id: t.id, title: t.title, tab: tabOf(t.sourceRef), due: t.dueDate,
       daysLate: t.dueDate && t.dueDate < asOf ? workingDaysBetween(t.dueDate, asOf) : 0,
       owner: person(t.ownerId), blocked: t.status === "blocked",
+      stream: streamOf({ title: t.title, tab: tabOf(t.sourceRef), code: codeOf(t.sourceRef) }), week: null,
     });
     const items = open.map(item);
+    const weeks = dueWeeks(items, asOf);
+    for (const i of items) i.week = weekBucket(i.due, weeks);
     const pastDue = items.filter((i) => i.daysLate > 0).sort((a, b) => b.daysLate - a.daysLate || a.title.localeCompare(b.title));
     const dueSoon = items.filter((i) => i.due && i.due >= asOf && calendarDaysBetween(asOf, i.due) <= dueSoonDays)
       .sort((a, b) => a.due!.localeCompare(b.due!));
@@ -125,7 +196,10 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       daysLate: p.nextStepDate && p.nextStepDate < asOf ? workingDaysBetween(p.nextStepDate, asOf) : 0,
       owner: person(p.ownerId), type: p.type, method: p.method, stage: p.stage,
       stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker, sheetStatus: p.sheetStatus ?? null,
-      sets: p.tests.map((t) => ({ label: `${t.transaction} ${t.direction}`, testStatus: t.testStatus, live: t.prodStatus === "live" })),
+      sets: p.tests.map((t) => ({
+        label: `${t.transaction} ${t.direction === "inbound" ? "in" : "out"}`, transaction: t.transaction, direction: t.direction,
+        testStatus: t.testStatus, live: t.prodStatus === "live", sheetStatus: t.sheetStatus ?? null,
+      })),
     })).sort((a, b) => b.daysLate - a.daysLate || (a.nextStepDate ?? "9999").localeCompare(b.nextStepDate ?? "9999") || a.name.localeCompare(b.name));
 
     const split = new Map<string, TabSplit>();
@@ -143,7 +217,9 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
     out.push({
       row, sheetOnly, total: tasks.length,
       byTab: [...split.values()].sort((a, b) => (b.pastDue + b.dueSoon + b.later + b.noDate) - (a.pastDue + a.dueSoon + a.later + a.noDate)),
-      weeks: dueWeeks(items, asOf),
+      weeks,
+      byStream: streamSplits(tasks.map((t) => ({ done: t.status === "done", item: item(t) })), asOf, dueSoonDays),
+      heat: streamHeat(items, weeks),
       sources: srcs.map(({ label, lastSyncedAt, lastResult }) => ({ label, lastSyncedAt, lastResult })),
       counts: {
         open: open.length, pastDue: pastDue.length, dueSoon: dueSoon.length, noDate: items.filter((i) => !i.due).length,

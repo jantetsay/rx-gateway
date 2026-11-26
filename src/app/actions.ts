@@ -4,6 +4,7 @@
 // audits it), refresh the pages that show it, and send the person back with a
 // plain message. Errors come back as a message, never a crash page.
 
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomUUID } from "node:crypto";
@@ -148,6 +149,22 @@ export async function addSheetSource(f: FormData) {
     if (!spreadsheetId) throw new Error("Paste the sheet's address or its ID");
     await db.insert(t.sheetSources).values({ id, projectId: str(f, "projectId"), label: str(f, "label") || "Tracking sheet", spreadsheetId, mapping: m.data });
     await repo.audit(db, a, "create", "sheet_source", id, { projectId: str(f, "projectId"), after: { label: str(f, "label") } });
+  });
+}
+
+/** Replaces a sheet source's mapping, for example to drop a tab another sheet now covers. The next sync applies it. */
+export async function updateSheetMapping(f: FormData) {
+  return run(f, "Mapping saved. Press Sync now to apply it.", async (db, a) => {
+    const id = str(f, "sourceId");
+    const [src] = await db.select().from(t.sheetSources).where(eq(t.sheetSources.id, id));
+    if (!src) throw new Error("No such sheet source");
+    let parsed: unknown;
+    try { parsed = JSON.parse(str(f, "mapping")); } catch { throw new Error("The mapping isn't valid JSON"); }
+    const tabs = (parsed as { tabs?: unknown })?.tabs ?? parsed;
+    const m = mappingSchema.safeParse({ tabs });
+    if (!m.success) throw new Error(`The mapping doesn't fit: ${m.error.issues[0]?.path.join(".")} ${m.error.issues[0]?.message}`);
+    await db.update(t.sheetSources).set({ mapping: m.data }).where(eq(t.sheetSources.id, id));
+    await repo.audit(db, a, "update", "sheet_source", id, { projectId: src.projectId, before: { mapping: src.mapping }, after: { mapping: m.data } });
   });
 }
 

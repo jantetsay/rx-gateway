@@ -30,6 +30,8 @@ export interface EdiTest {
   testStatus: "not_run" | "passed" | "failed";
   prodStatus: "not_live" | "live";
   notes: string | null;
+  /** The status words from a tracking sheet, when the set comes from one. */
+  sheetStatus?: string | null;
 }
 
 export interface SpecGap {

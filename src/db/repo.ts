@@ -105,7 +105,7 @@ function toPartner(
     method: x.method as EdiPartner["method"], isa15: x.isa15 as "T" | "P",
     tests: tests.filter((y) => y.partnerId === x.id).map((y) => ({
       id: y.id, transaction: y.transaction, direction: y.direction as "inbound" | "outbound",
-      testStatus: y.testStatus as "not_run" | "passed" | "failed", prodStatus: y.prodStatus as "not_live" | "live", notes: y.notes,
+      testStatus: y.testStatus as "not_run" | "passed" | "failed", prodStatus: y.prodStatus as "not_live" | "live", notes: y.notes, sheetStatus: y.sheetStatus,
     })).sort((a, b) => a.transaction.localeCompare(b.transaction)),
     gaps: gaps.filter((y) => y.partnerId === x.id),
   };

@@ -1,11 +1,15 @@
-// The detail behind each KPI tile on the dashboard: every open item, past-due
-// item, item due soon, undated item, or every EDI partner, as a full list.
+// The detail behind each KPI tile and work-stream card on the dashboard: every
+// open, past-due, due-soon or undated item grouped by work stream, with the
+// stream-by-week heat map; or every EDI partner with its transaction-set heat map.
 // Read only; partners are edited on the EDI page.
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { today } from "@/domain/calendar";
-import { buildSheetBoards, type SheetItem, type SheetPartner } from "@/domain/sheetboard";
+import { buildSheetBoards, type SheetBoard, type SheetItem, type SheetPartner } from "@/domain/sheetboard";
+import { STREAMS, STREAM_LABEL, isStream, type StreamKey } from "@/domain/streams";
+import { setGrid } from "@/domain/setlevels";
+import { SetHeatMap, StreamHeatMap } from "@/components/heatmaps";
 import { getDb } from "@/db/client";
 import * as t from "@/db/schema";
 import { loadRow } from "@/server/load";
@@ -65,12 +69,14 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "ba
   );
 }
 
-function PartnerView({ projectId, partners, filter }: { projectId: string; partners: SheetPartner[]; filter: PFilter }) {
+function PartnerView({ projectId, partners, filter, only }: { projectId: string; partners: SheetPartner[]; filter: PFilter; only: string | null }) {
   const late = partners.filter((x) => x.daysLate > 0);
   const onTime = partners.filter((x) => x.daysLate === 0 && x.nextStepDate);
   const undated = partners.filter((x) => !x.nextStepDate);
-  const shown = partners.filter((x) => filter === "all" || (filter === "late" ? x.daysLate > 0 : x.type === filter));
+  const picked = only ? partners.find((x) => x.id === only) ?? null : null;
+  const shown = picked ? [picked] : partners.filter((x) => filter === "all" || (filter === "late" ? x.daysLate > 0 : x.type === filter));
   const base = `/projects/${projectId}/board?view=partners`;
+  const grid = setGrid(partners.filter((x) => filter === "all" || (filter === "late" ? x.daysLate > 0 : x.type === filter)));
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -93,7 +99,16 @@ function PartnerView({ projectId, partners, filter }: { projectId: string; partn
         })}
       </nav>
 
-      <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
+      <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+        <h2 className="text-base font-bold">Partners by transaction set</h2>
+        <p className="mb-3 text-xs text-gray-600">Each row is a partner, each column a transaction set. Darker is further along, from not started to live. A red edge means the partner is past its next step. Click a row or cell for that partner.</p>
+        <SetHeatMap grid={grid} hrefFor={(pid) => `${base}${filter !== "all" ? `&filter=${filter}` : ""}&partner=${pid}#partner-table`} />
+      </div>
+
+      {picked && (
+        <p className="text-sm">Showing {picked.name} only. <Link href={`${base}${filter !== "all" ? `&filter=${filter}` : ""}#partner-table`}>Show every partner</Link></p>
+      )}
+      <div id="partner-table" className="scroll-mt-4 overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
         {shown.length === 0 ? <p className="p-5 text-sm text-gray-500">No partners match.</p> : (
           <table className="w-full min-w-[56rem] text-sm">
             <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
@@ -132,46 +147,71 @@ function PartnerView({ projectId, partners, filter }: { projectId: string; partn
   );
 }
 
-function ItemView({ projectId, view, items, tab }: { projectId: string; view: View; items: SheetItem[]; tab: string | null }) {
-  const tabs = [...new Set(items.map((i) => i.tab))].sort();
-  const shown = tab ? items.filter((i) => i.tab === tab) : items;
+function ItemTable({ items }: { items: SheetItem[] }) {
+  return (
+    <table className="w-full min-w-[40rem] text-sm">
+      <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
+        <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Tab</th><th className="px-3 py-2">Due</th><th className="px-3 py-2">Days late</th><th className="px-3 py-2">Owner</th></tr>
+      </thead>
+      <tbody className="divide-y divide-line">
+        {items.map((i) => (
+          <tr key={i.id} className={i.daysLate > 0 ? "bg-bad-bg/30" : ""}>
+            <td className="px-3 py-2 align-top">{i.title}{i.blocked && <span className="ml-2 rounded bg-bad-bg px-1.5 text-[11px] font-semibold text-bad">Blocked</span>}</td>
+            <td className="whitespace-nowrap px-3 py-2 align-top text-gray-600">{i.tab}</td>
+            <td className="whitespace-nowrap px-3 py-2 align-top">{i.due ? fmtDate(i.due) : "—"}</td>
+            <td className="px-3 py-2 align-top"><LateBadge daysLate={i.daysLate} due={i.due} /></td>
+            <td className="px-3 py-2 align-top">{i.owner ?? <span className="text-gray-400">None</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ItemView({ projectId, view, items, stream, week, board }: { projectId: string; view: View; items: SheetItem[]; stream: StreamKey | null; week: string | null; board: SheetBoard }) {
   const base = `/projects/${projectId}/board?view=${view}`;
+  const byWeek = week ? items.filter((i) => i.week === week) : items;
+  const shown = stream ? byWeek.filter((i) => i.stream === stream) : byWeek;
+  const groups = STREAMS.map((s) => ({ ...s, items: shown.filter((i) => i.stream === s.key) })).filter((g) => g.items.length);
+  const weekLabel = week === "nodate" ? "no due date" : week ? `due the week of ${fmtDate(week)}${board.heat.columns[0]?.key === week ? " or earlier" : ""}` : null;
   return (
     <div className="space-y-4">
-      {tabs.length > 1 && (
-        <nav className="flex flex-wrap gap-2 text-xs" aria-label="Filter by tab">
-          {[null, ...tabs].map((k) => {
-            const on = k === tab;
-            const n = k ? items.filter((i) => i.tab === k).length : items.length;
-            return (
-              <Link key={k ?? "all"} href={k ? `${base}&tab=${encodeURIComponent(k)}` : base} aria-current={on ? "page" : undefined}
-                className={`rounded-full border px-3 py-1 font-semibold no-underline ${on ? "border-navy bg-navy text-white" : "border-line bg-white text-navy hover:border-navy/40"}`}>
-                {k ?? "All tabs"} · {n}
-              </Link>
-            );
-          })}
-        </nav>
+      {view === "open" && (
+        <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold">When each stream&apos;s work is due</h2>
+          <p className="mb-3 text-xs text-gray-600">Darker means more open items. Click a cell to list just those items below.</p>
+          <StreamHeatMap heat={board.heat} hrefFor={(st, w) => `${base}&stream=${st}${w ? `&week=${w}` : ""}#items`} />
+        </div>
       )}
-      <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
-        {shown.length === 0 ? <p className="p-5 text-sm text-gray-500">Nothing here.</p> : (
-          <table className="w-full min-w-[40rem] text-sm">
-            <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
-              <tr><th className="px-3 py-2">Item</th><th className="px-3 py-2">Tab</th><th className="px-3 py-2">Due</th><th className="px-3 py-2">Days late</th><th className="px-3 py-2">Owner</th></tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {shown.map((i) => (
-                <tr key={i.id} className={i.daysLate > 0 ? "bg-bad-bg/30" : ""}>
-                  <td className="px-3 py-2 align-top">{i.title}{i.blocked && <span className="ml-2 rounded bg-bad-bg px-1.5 text-[11px] font-semibold text-bad">Blocked</span>}</td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top text-gray-600">{i.tab}</td>
-                  <td className="whitespace-nowrap px-3 py-2 align-top">{i.due ? fmtDate(i.due) : "—"}</td>
-                  <td className="px-3 py-2 align-top"><LateBadge daysLate={i.daysLate} due={i.due} /></td>
-                  <td className="px-3 py-2 align-top">{i.owner ?? <span className="text-gray-400">None</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+
+      <nav id="items" className="flex scroll-mt-4 flex-wrap gap-2 text-xs" aria-label="Filter by work stream">
+        {[null, ...STREAMS.map((s) => s.key)].map((k) => {
+          const n = k ? byWeek.filter((i) => i.stream === k).length : byWeek.length;
+          if (k && !n && k !== stream) return null;
+          const on = k === stream;
+          return (
+            <Link key={k ?? "all"} href={`${base}${k ? `&stream=${k}` : ""}${week ? `&week=${week}` : ""}#items`} aria-current={on ? "page" : undefined}
+              className={`rounded-full border px-3 py-1 font-semibold no-underline ${on ? "border-navy bg-navy text-white" : "border-line bg-white text-navy hover:border-navy/40"}`}>
+              {k ? STREAM_LABEL[k] : "All streams"} · {n}
+            </Link>
+          );
+        })}
+      </nav>
+      {weekLabel && <p className="text-sm">Showing items {weekLabel}. <Link href={`${base}${stream ? `&stream=${stream}` : ""}#items`}>Show every week</Link></p>}
+
+      {groups.length === 0 ? <p className="rounded-xl border border-line bg-white p-5 text-sm text-gray-500 shadow-sm">Nothing here.</p> : groups.map((g) => {
+        const late = g.items.filter((i) => i.daysLate > 0).length;
+        return (
+          <section key={g.key} className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-2.5">
+              <h2 className="text-base font-bold">{g.label}</h2>
+              <span className="text-xs text-gray-600">{g.items.length} item{g.items.length === 1 ? "" : "s"}{late ? <span className="ml-2 font-semibold text-bad">{late} past due</span> : null}</span>
+            </div>
+            <ItemTable items={g.items} />
+          </section>
+        );
+      })}
+      <p className="text-xs text-gray-500">The sheet has no work-stream column, so each item&apos;s stream comes from its title: an AP or AR tag first, then the tab (Data Migration), then the code (T for Training, M and V for Go-live), then words like vendor, invoice, inventory or order. Anything that fits none is Unassigned.</p>
     </div>
   );
 }
@@ -188,7 +228,10 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
   const view: View = raw && raw in VIEWS ? (raw as View) : "partners";
   const rawF = one(sp.filter);
   const filter: PFilter = rawF && rawF in PFILTERS ? (rawF as PFilter) : "all";
-  const tab = one(sp.tab) ?? null;
+  const rawS = one(sp.stream);
+  const stream: StreamKey | null = isStream(rawS) ? rawS : null;
+  const week = one(sp.week) ?? null;
+  const only = one(sp.partner) ?? null;
   const client = row.snapshot.project.clientName;
 
   const lists: Record<Exclude<View, "partners">, SheetItem[]> | null = b ? {
@@ -203,7 +246,7 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
     <div className="space-y-5">
       <div>
         <Link href="/" className="text-xs">Back to the dashboard</Link>
-        <h1 className="text-2xl font-bold">{VIEWS[view]} · {client}</h1>
+        <h1 className="text-2xl font-bold">{VIEWS[view]}{stream && view !== "partners" ? ` · ${STREAM_LABEL[stream]}` : ""} · {client}</h1>
         <p className="text-sm text-gray-600">As of {fmtDate(asOf)}, from the client&apos;s tracking sheet.</p>
       </div>
 
@@ -211,7 +254,7 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
         {(Object.keys(VIEWS) as View[]).map((v) => {
           const on = v === view;
           return (
-            <Link key={v} href={`/projects/${id}/board?view=${v}`} aria-current={on ? "page" : undefined}
+            <Link key={v} href={`/projects/${id}/board?view=${v}${stream && v !== "partners" ? `&stream=${stream}` : ""}`} aria-current={on ? "page" : undefined}
               className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold no-underline ${on ? "border-navy text-navy" : "border-transparent text-gray-600 hover:text-navy"}`}>
               {VIEWS[v]} <span className="ml-1 rounded-full bg-card px-1.5 text-xs">{count(v)}</span>
             </Link>
@@ -220,8 +263,8 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
       </nav>
 
       {!b ? <p className="text-sm text-gray-500">This client has no tracking sheet yet. Add one on <Link href="/settings/sheets">Sheets</Link>.</p>
-        : view === "partners" ? <PartnerView projectId={id} partners={b.partners} filter={filter} />
-        : <ItemView projectId={id} view={view} items={lists![view]} tab={tab} />}
+        : view === "partners" ? <PartnerView projectId={id} partners={b.partners} filter={filter} only={only} />
+        : <ItemView projectId={id} view={view} items={lists![view]} stream={stream} week={week} board={b} />}
     </div>
   );
 }

@@ -76,6 +76,19 @@ describe("a client run from its tracking sheet", () => {
     expect(b.noOwners).toBe(true);
     expect(b.total).toBe(5);
     expect(b.byTab).toEqual([{ tab: "Delivery", pastDue: 2, dueSoon: 1, later: 0, noDate: 1, done: 1 }]);
+    // A card per work stream: the five core streams always, others when they have items.
+    expect(b.byStream.map((x) => x.key)).toEqual(["ap", "ar", "purchasing", "sales", "warehouse", "unassigned"]);
+    expect(b.byStream.find((x) => x.key === "sales")).toMatchObject({ open: 2, pastDue: 1, noDate: 1, done: 0 });
+    expect(b.byStream.find((x) => x.key === "warehouse")).toMatchObject({ open: 1, dueSoon: 1 });
+    expect(b.byStream.find((x) => x.key === "unassigned")).toMatchObject({ open: 1, pastDue: 1, done: 1, total: 2 }); // shown: one open
+    expect(b.byStream.find((x) => x.key === "ap")).toMatchObject({ open: 0, total: 0 });
+    // The heat map: rows are streams with open work, columns are weeks then "No date".
+    expect(b.heat.rows.map((r) => r.key)).toEqual(["sales", "warehouse", "unassigned"]);
+    expect(b.heat.columns.at(-1)?.key).toBe("nodate");
+    const sales = b.heat.rows.find((r) => r.key === "sales")!;
+    expect(sales.cells.nodate).toBe(1);
+    expect(sales.cells[b.open.find((i) => i.title === "Cut over the price files")!.week!]).toBe(1);
+    expect(b.heat.columns.find((c) => c.isThisWeek)?.key).toBe("2026-11-23");
     const week = b.weeks.find((w) => w.start === "2026-11-23");
     expect(week).toMatchObject({ pastDue: 1, upcoming: 0, isThisWeek: true });
   });
