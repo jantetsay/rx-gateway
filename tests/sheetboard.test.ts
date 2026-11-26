@@ -67,6 +67,12 @@ describe("a client run from its tracking sheet", () => {
     expect(b.pastDue[0].tab).toBe("Delivery");
     expect(b.dueSoon.map((i) => i.title)).toEqual(["Train the warehouse team"]);
     expect(b.partners[0]).toMatchObject({ name: "Partner A", daysLate: 4 });
+    expect(b.partners[0].stageLabel).toBeTruthy();
+    expect(Array.isArray(b.partners[0].sets)).toBe(true);
+    // The Open tile's detail list: every open item, most overdue first, undated last.
+    expect(b.open.map((i) => i.title).slice(0, 2)).toEqual(["Cut over the price files", "Confirm label printers"]);
+    expect(b.open).toHaveLength(4);
+    expect(b.open[b.open.length - 1].due).toBeNull();
     expect(b.noOwners).toBe(true);
     expect(b.total).toBe(5);
     expect(b.byTab).toEqual([{ tab: "Delivery", pastDue: 2, dueSoon: 1, later: 0, noDate: 1, done: 1 }]);

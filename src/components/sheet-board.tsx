@@ -45,20 +45,26 @@ function Icon({ d, className = "" }: { d: string; className?: string }) {
 
 // ---------- KPI tile ----------
 
-function Kpi({ label, value, sub, icon, tone }: { label: string; value: React.ReactNode; sub?: string; icon: string; tone: "critical" | "warning" | "neutral" | "good" }) {
+function Kpi({ label, value, sub, icon, tone, href }: { label: string; value: React.ReactNode; sub?: string; icon: string; tone: "critical" | "warning" | "neutral" | "good"; href?: string }) {
   const accent = { critical: "var(--color-st-critical)", warning: "var(--color-st-warning)", good: "var(--color-st-good)", neutral: "var(--color-navy)" }[tone];
   const numberColor = tone === "critical" ? "text-bad" : tone === "warning" ? "text-warn" : "text-navy";
   return (
-    <div className="relative overflow-hidden rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
+    <TileShell href={href}>
       <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} />
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">{label}</span>
         <span style={{ color: accent }}><Icon d={icon} /></span>
       </div>
       <div className={`mt-1 font-serif text-4xl font-bold leading-none ${numberColor}`}>{value}</div>
-      {sub && <div className="mt-1 text-xs text-gray-600">{sub}</div>}
-    </div>
+      {sub && <div className="mt-1 text-xs text-gray-600">{sub}{href ? <span className="float-right font-semibold text-navy">Details</span> : null}</div>}
+    </TileShell>
   );
+}
+
+function TileShell({ href, children }: { href?: string; children: React.ReactNode }) {
+  const cls = "relative block overflow-hidden rounded-xl border border-line bg-white px-4 py-3 shadow-sm";
+  if (!href) return <div className={cls}>{children}</div>;
+  return <Link href={href} className={`${cls} text-inherit no-underline transition hover:border-navy/40 hover:shadow-md active:scale-[0.99]`}>{children}</Link>;
 }
 
 // ---------- Where the open work is: one stacked bar per tab ----------
@@ -205,11 +211,11 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Kpi label="Open" value={c.open} sub={`of ${b.total} items`} icon={I.list} tone="neutral" />
-        <Kpi label="Past due" value={c.pastDue} sub={c.open ? `${Math.round((c.pastDue / c.open) * 100)}% of open work` : undefined} icon={I.alert} tone={c.pastDue ? "critical" : "good"} />
-        <Kpi label="Due in 2 weeks" value={c.dueSoon} sub="next 14 days" icon={I.clock} tone={c.dueSoon ? "warning" : "neutral"} />
-        <Kpi label="No due date" value={c.noDate} sub="open, undated" icon={I.nodate} tone="neutral" />
-        <Kpi label="EDI partners late" value={`${c.partnersPastDue}/${c.partners}`} sub="past their next step" icon={I.link} tone={c.partnersPastDue ? "critical" : "good"} />
+        <Kpi label="Open" value={c.open} sub={`of ${b.total} items`} icon={I.list} tone="neutral" href={`/projects/${p.id}/board?view=open`} />
+        <Kpi label="Past due" value={c.pastDue} sub={c.open ? `${Math.round((c.pastDue / c.open) * 100)}% of open work` : undefined} icon={I.alert} tone={c.pastDue ? "critical" : "good"} href={`/projects/${p.id}/board?view=pastdue`} />
+        <Kpi label="Due in 2 weeks" value={c.dueSoon} sub="next 14 days" icon={I.clock} tone={c.dueSoon ? "warning" : "neutral"} href={`/projects/${p.id}/board?view=soon`} />
+        <Kpi label="No due date" value={c.noDate} sub="open, undated" icon={I.nodate} tone="neutral" href={`/projects/${p.id}/board?view=nodate`} />
+        <Kpi label="EDI partners late" value={`${c.partnersPastDue}/${c.partners}`} sub="past their next step" icon={I.link} tone={c.partnersPastDue ? "critical" : "good"} href={`/projects/${p.id}/board?view=partners`} />
       </div>
 
       <div className="rounded-xl border border-line bg-white px-5 py-3 shadow-sm">
@@ -261,7 +267,7 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
 
         <div className="space-y-4 lg:col-span-2">
           <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-base font-bold">EDI partners</h3>
+            <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-bold">EDI partners</h3><Link href={`/projects/${p.id}/board?view=partners`} className="text-xs">Partner details</Link></div>
             {b.partners.length === 0 ? <p className="text-sm text-gray-500">No EDI partners in the sheet.</p> : (
               <ul className="grid gap-2 sm:grid-cols-2">
                 {b.partners.map((x) => {

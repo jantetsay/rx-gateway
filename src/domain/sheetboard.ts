@@ -4,6 +4,7 @@
 
 import { addDays, calendarDaysBetween, parse, workingDaysBetween, type ISODate } from "./calendar";
 import type { PortfolioRow } from "./portfolio";
+import { EDI_STAGES } from "./edi";
 import { SHEET_PLAN } from "./template";
 
 export interface SheetItem {
@@ -23,6 +24,14 @@ export interface SheetPartner {
   nextStepDate: ISODate | null;
   daysLate: number;
   owner: string | null;
+  type: "supplier" | "customer";
+  method: string | null;
+  stage: number;
+  stageLabel: string;
+  lastContact: ISODate | null;
+  blocker: string | null;
+  /** Transaction sets in the test matrix, as "850 out", with their test result. */
+  sets: { label: string; testStatus: "passed" | "failed" | "not_run"; live: boolean }[];
 }
 
 /** Open work in one tab, split by when it is due. */
@@ -36,6 +45,8 @@ export interface SheetBoard {
   sheetOnly: boolean;
   sources: { label: string; lastSyncedAt: string | null; lastResult: string | null }[];
   counts: { open: number; pastDue: number; dueSoon: number; noDate: number; done: number; partners: number; partnersPastDue: number };
+  /** Every open item, most overdue first, then by due date, undated last. */
+  open: SheetItem[];
   pastDue: SheetItem[];
   dueSoon: SheetItem[];
   /** Open items by tab, for the "what is open" line. */
@@ -110,7 +121,9 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
     const partners: SheetPartner[] = s.ediPartners.filter((p) => p.stage !== 9).map((p) => ({
       id: p.id, name: p.name, nextStep: p.nextStep, nextStepDate: p.nextStepDate,
       daysLate: p.nextStepDate && p.nextStepDate < asOf ? workingDaysBetween(p.nextStepDate, asOf) : 0,
-      owner: person(p.ownerId),
+      owner: person(p.ownerId), type: p.type, method: p.method, stage: p.stage,
+      stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker,
+      sets: p.tests.map((t) => ({ label: `${t.transaction} ${t.direction}`, testStatus: t.testStatus, live: t.prodStatus === "live" })),
     })).sort((a, b) => b.daysLate - a.daysLate || (a.nextStepDate ?? "9999").localeCompare(b.nextStepDate ?? "9999") || a.name.localeCompare(b.name));
 
     const split = new Map<string, TabSplit>();
@@ -134,6 +147,7 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
         open: open.length, pastDue: pastDue.length, dueSoon: dueSoon.length, noDate: items.filter((i) => !i.due).length,
         done: tasks.length - open.length, partners: partners.length, partnersPastDue: partners.filter((p) => p.daysLate > 0).length,
       },
+      open: [...items].sort((a, b) => b.daysLate - a.daysLate || (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.title.localeCompare(b.title)),
       pastDue, dueSoon,
       openByTab: [...tabs].map(([tab, x]) => ({ tab, ...x })).sort((a, b) => b.open - a.open),
       partners,
