@@ -4,7 +4,7 @@ import * as repo from "@/db/repo";
 import * as t from "@/db/schema";
 import { evaluateProject } from "@/domain/evaluate";
 import { buildRow } from "@/domain/portfolio";
-import { buildSheetBoards, dueWeeks, weekStart } from "@/domain/sheetboard";
+import { buildSheetBoards, dueWeeks, nameAndDescription, weekStart } from "@/domain/sheetboard";
 import { WORKSTREAMS } from "@/domain/types";
 
 let db: DB;
@@ -119,5 +119,18 @@ describe("a client run from its tracking sheet", () => {
     }, "u1");
     const [s] = await repo.loadSnapshots(db, [other]);
     expect(buildSheetBoards([buildRow(s, evaluateProject(s, asOf), null)], [], asOf)).toHaveLength(0);
+  });
+});
+
+describe("nameAndDescription", () => {
+  it("splits a title at its first colon", () => {
+    expect(nameAndDescription("Anticipated Purchasing: demand-planning view", null)).toEqual({ name: "Anticipated Purchasing", description: "demand-planning view" });
+  });
+  it("keeps a title with no colon whole and uses the sheet note", () => {
+    expect(nameAndDescription("Pricing not yet loaded", "Gates pricing on day one.")).toEqual({ name: "Pricing not yet loaded", description: "Gates pricing on day one." });
+  });
+  it("prefers the note and ignores a dash", () => {
+    expect(nameAndDescription("Thing: detail", "Note")).toEqual({ name: "Thing", description: "Note" });
+    expect(nameAndDescription("Thing", "-")).toEqual({ name: "Thing", description: null });
   });
 });

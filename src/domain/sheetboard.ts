@@ -11,7 +11,13 @@ import { CORE_STREAMS, STREAMS, codeOf, streamOf, type StreamKey } from "./strea
 export interface SheetItem {
   id: string;
   title: string;
+  /** The item's short name: the title before its first colon, or the whole title. */
+  name: string;
+  /** The sheet's note for the row, else the title after its first colon. */
+  description: string | null;
   tab: string;
+  /** Built, Released, Demoed and Accepted as the sheet writes them; null where it says nothing. */
+  progress: { built: string | null; released: string | null; demoed: string | null; accepted: string | null };
   due: ISODate | null;
   daysLate: number;
   owner: string | null;
@@ -116,6 +122,15 @@ export function weekBucket(due: ISODate | null, weeks: DueWeek[]): string | null
   return weeks.some((x) => x.start === w) ? w : null;
 }
 
+/** Splits "Anticipated Purchasing: demand-planning view" into a name and a description; a sheet note wins as the description. */
+export function nameAndDescription(title: string, note: string | null): { name: string; description: string | null } {
+  const at = title.indexOf(":");
+  const name = at > 0 && title.slice(at + 1).trim() ? title.slice(0, at).trim() : title.trim();
+  const rest = at > 0 ? title.slice(at + 1).trim() : "";
+  const n = note?.trim();
+  return { name, description: n && n !== "-" ? n : rest || null };
+}
+
 function streamSplits(all: { done: boolean; item: SheetItem }[], asOf: ISODate, dueSoonDays: number): StreamSplit[] {
   const out = new Map<StreamKey, StreamSplit>();
   for (const s of STREAMS) {
@@ -174,7 +189,8 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
 
     const open = tasks.filter((t) => t.status !== "done");
     const item = (t: (typeof tasks)[number]): SheetItem => ({
-      id: t.id, title: t.title, tab: tabOf(t.sourceRef), due: t.dueDate,
+      id: t.id, title: t.title, ...nameAndDescription(t.title, t.description ?? null), tab: tabOf(t.sourceRef), due: t.dueDate,
+      progress: { built: t.built ?? null, released: t.released ?? null, demoed: t.demoed ?? null, accepted: t.accepted ?? null },
       daysLate: t.dueDate && t.dueDate < asOf ? workingDaysBetween(t.dueDate, asOf) : 0,
       owner: person(t.ownerId), blocked: t.status === "blocked",
       stream: streamOf({ title: t.title, tab: tabOf(t.sourceRef), code: codeOf(t.sourceRef) }), week: null,

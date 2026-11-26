@@ -105,6 +105,28 @@ describe("records and audit", () => {
     const gone = await syncSource(db, "src3", "u1", async () => new Map([["Connections", [conn]], ["Transactions", [tx]]]));
     expect(gone.partners.removed).toBe(1);
   });
+  it("fills Built, Released, Demoed and Accepted from progress tabs by item code, and a note as the description", async () => {
+    await db.insert(t.sheetSources).values({
+      id: "src4", projectId, label: "Tracker 4", spreadsheetId: "fake",
+      mapping: { tabs: [
+        { kind: "tasks", tab: "Delivery", defaults: { workstream: "data", stage: "data", gate: null }, columns: { key: "Code", title: "Task", status: "State", notes: "Note" } },
+        { kind: "item_progress", tab: "List A", headerRow: 2, columns: { key: "Delivery ID", built: "1 BUILT", released: "2 RELEASED", accepted: "3 ACCEPTED" } },
+        { kind: "item_progress", tab: "List B", columns: { key: "Ticket", demoed: "Demo'd?", accepted: "Accepted" } },
+      ] },
+    });
+    const r = await syncSource(db, "src4", "u1", async () => new Map([
+      ["Delivery", [["Code", "Task", "State", "Note"], ["Z1", "Made-up one: the detail", "OPEN", ""], ["Z2", "Made-up two", "OPEN", "A note"], ["Z3", "Made-up three", "OPEN", "-"]]],
+      ["List A", [["A title row"], ["Delivery ID", "1 BUILT", "2 RELEASED", "3 ACCEPTED"], ["Z1", "YES", "NO", ""], ["-", "YES", "YES", "YES"]]],
+      ["List B", [["Ticket", "Demo'd?", "Accepted"], ["Z1", "No", "YES"], ["Z2", "", ""]]],
+    ]));
+    expect(r.ok).toBe(true);
+    expect(r.progress).toBe(1);
+    const rows = await db.select().from(t.tasks).where(eq(t.tasks.source, "sheet"));
+    const z1 = rows.find((x) => x.sourceRef === "src4:Delivery!Z1")!;
+    expect([z1.built, z1.released, z1.demoed, z1.accepted]).toEqual(["YES", "NO", "No", "YES"]);
+    const z2 = rows.find((x) => x.sourceRef === "src4:Delivery!Z2")!;
+    expect([z2.description, z2.built, z2.accepted]).toEqual(["A note", null, null]);
+  });
   it("reports a sheet that can't be read without throwing", async () => {
     const r = await syncSource(db, "src1", "u1", async () => { throw new Error("The sheet isn't shared"); });
     expect(r.ok).toBe(false);

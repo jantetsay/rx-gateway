@@ -70,6 +70,13 @@ export const tasks = pgTable("tasks", {
   source: text("source").notNull().default("app"),
   /** For rows read from a sheet: tab and row key. The sheet stays the source for these. */
   sourceRef: text("source_ref"),
+  /** For rows read from a sheet: its note or description column, when mapped. */
+  description: text("description"),
+  /** Delivery progress a sheet keeps beside the item, as written there ("YES", "NO", a date, "N/R"). */
+  built: text("built"),
+  released: text("released"),
+  demoed: text("demoed"),
+  accepted: text("accepted"),
 });
 
 export const dependencies = pgTable("dependencies", {

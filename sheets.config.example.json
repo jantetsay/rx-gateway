@@ -6,7 +6,7 @@
       "tab": "Delivery tasks",
       "headerRow": 1,
       "defaults": { "workstream": "env_config", "stage": "validate_go_live", "gate": "G6", "critical": false },
-      "columns": { "key": "ID", "title": "Task", "status": "Status", "due": "Due", "completed": "Completed", "lastTouched": "Last updated", "owner": "Owner" },
+      "columns": { "key": "ID", "title": "Task", "status": "Status", "due": "Due", "completed": "Completed", "lastTouched": "Last updated", "owner": "Owner", "notes": "Notes" },
       "statusMap": { "Open": "not_started", "Working": "in_progress", "Stuck": "blocked", "Closed": "done" }
     },
     {
@@ -22,6 +22,12 @@
       "tab": "Transactions",
       "headerRow": 1,
       "columns": { "partner": "Partner", "set": "Transaction set", "direction": "Direction", "status": "Map status", "lastTest": "Last test" }
+    },
+    {
+      "kind": "item_progress",
+      "tab": "Stakeholder list",
+      "headerRow": 1,
+      "columns": { "key": "Delivery ID", "built": "Built", "released": "Released", "demoed": "Demoed", "accepted": "Accepted" }
     }
   ]
 }

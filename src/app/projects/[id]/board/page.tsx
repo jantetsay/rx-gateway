@@ -1,6 +1,7 @@
 // The detail behind each KPI tile and work-stream card on the dashboard: every
 // open, past-due, due-soon or undated item grouped by work stream, with the
-// stream-by-week heat map; or every EDI partner with its transaction-set heat map.
+// stream-by-week heat map; one work stream's items as a plain list; or every
+// EDI partner with its transaction-set heat map.
 // Read only; partners are edited on the EDI page.
 
 import Link from "next/link";
@@ -168,6 +169,67 @@ function ItemTable({ items }: { items: SheetItem[] }) {
   );
 }
 
+/** How a progress cell reads: yes, no, a date, or the sheet's own word (N/R, DEFER). Never color alone. */
+function Step({ v }: { v: string | null }) {
+  if (!v) return <span className="text-gray-300" aria-label="Not in the sheet">—</span>;
+  const t = v.trim();
+  if (/^(yes|y|true|done|x|✓|✔)$/i.test(t)) return <span className="inline-flex items-center gap-1 font-semibold text-ok"><span aria-hidden>✓</span>Yes</span>;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return <span className="inline-flex items-center gap-1 font-semibold text-ok"><span aria-hidden>✓</span>{fmtDate(t.slice(0, 10))}</span>;
+  if (/^(no|n|false)$/i.test(t)) return <span className="text-gray-500">No</span>;
+  return <span className="text-gray-700">{t}</span>;
+}
+
+const STEPS = [["built", "Built"], ["released", "Released"], ["demoed", "Demoed"], ["accepted", "Accepted"]] as const;
+
+/** One work stream's items as a plain list: name, a short description, due date, then Built, Released, Demoed and Accepted. Soonest first. */
+function StreamList({ projectId, view, items, stream, week, board }: { projectId: string; view: View; items: SheetItem[]; stream: StreamKey; week: string | null; board: SheetBoard }) {
+  const base = `/projects/${projectId}/board?view=${view}`;
+  const shown = items.filter((i) => i.stream === stream && (!week || i.week === week))
+    .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.name.localeCompare(b.name));
+  const late = shown.filter((i) => i.daysLate > 0).length;
+  const anyProgress = shown.some((i) => STEPS.some(([k]) => i.progress[k]));
+  const weekLabel = week === "nodate" ? "with no due date" : week ? `due the week of ${fmtDate(week)}${board.heat.columns[0]?.key === week ? " or earlier" : ""}` : null;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-gray-600">
+        {shown.length} {VIEWS[view].toLowerCase()} item{shown.length === 1 ? "" : "s"}{weekLabel ? ` ${weekLabel}` : ""}
+        {late > 0 && <span className="ml-1 font-semibold text-bad">· {late} past due</span>}
+        {weekLabel && <> · <Link href={`${base}&stream=${stream}`}>Show every week</Link></>}
+        {" · "}<Link href={base}>All work streams</Link>
+      </p>
+      {shown.length === 0 ? <p className="rounded-xl border border-line bg-white p-5 text-sm text-gray-500 shadow-sm">Nothing here.</p> : (
+        <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
+          <table className="w-full min-w-[48rem] text-sm">
+            <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
+              <tr>
+                <th className="px-4 py-2">Item</th>
+                <th className="px-3 py-2">Due</th>
+                {STEPS.map(([k, l]) => <th key={k} className="w-24 px-3 py-2">{l}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {shown.map((i) => (
+                <tr key={i.id} className="align-top">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold">{i.name}{i.blocked && <span className="ml-2 rounded bg-bad-bg px-1.5 text-[11px] font-semibold text-bad">Blocked</span>}</div>
+                    {i.description && <p className="mt-0.5 text-sm text-gray-600">{i.description}</p>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    {i.due ? <div className="font-semibold">{fmtDate(i.due)}</div> : <span className="text-gray-400">No due date</span>}
+                    {i.daysLate > 0 && <div className="text-xs font-semibold text-bad">Past due, {wd(i.daysLate)}</div>}
+                  </td>
+                  {STEPS.map(([k]) => <td key={k} className="whitespace-nowrap px-3 py-3"><Step v={i.progress[k]} /></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!anyProgress && shown.length > 0 && <p className="text-xs text-gray-500">The sheet has no Built, Released, Demoed or Accepted for these items yet. A dash means the sheet says nothing.</p>}
+    </div>
+  );
+}
+
 function ItemView({ projectId, view, items, stream, week, board }: { projectId: string; view: View; items: SheetItem[]; stream: StreamKey | null; week: string | null; board: SheetBoard }) {
   const base = `/projects/${projectId}/board?view=${view}`;
   const byWeek = week ? items.filter((i) => i.week === week) : items;
@@ -264,6 +326,7 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
 
       {!b ? <p className="text-sm text-gray-500">This client has no tracking sheet yet. Add one on <Link href="/settings/sheets">Sheets</Link>.</p>
         : view === "partners" ? <PartnerView projectId={id} partners={b.partners} filter={filter} only={only} />
+        : stream ? <StreamList projectId={id} view={view} items={lists![view]} stream={stream} week={week} board={b} />
         : <ItemView projectId={id} view={view} items={lists![view]} stream={stream} week={week} board={b} />}
     </div>
   );

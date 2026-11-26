@@ -23,6 +23,8 @@ const taskTab = z.object({
     completed: z.string().optional(),
     lastTouched: z.string().optional(),
     owner: z.string().optional(),
+    /** A note or description column, shown under the item. */
+    notes: z.string().optional(),
   }),
   statusMap: z.record(z.string(), z.enum(["not_started", "in_progress", "blocked", "done"])).default({}),
 });
@@ -66,11 +68,34 @@ const setTab = z.object({
   }),
 });
 
-export const mappingSchema = z.object({ tabs: z.array(z.discriminatedUnion("kind", [taskTab, partnerTab, setTab])).min(1) });
+/**
+ * Delivery progress kept on another tab (a stakeholder's list, say): rows
+ * matched to items by their code (D37, DM-02…), filling Built, Released,
+ * Demoed and Accepted. The first tab that has a value for an item wins.
+ */
+const progressTab = z.object({
+  kind: z.literal("item_progress"),
+  tab: z.string().min(1),
+  headerRow: z.number().int().min(1).default(1),
+  columns: z.object({
+    /** The item's code, as the tasks tab's key column has it. */
+    key: z.string(),
+    built: z.string().optional(),
+    released: z.string().optional(),
+    demoed: z.string().optional(),
+    accepted: z.string().optional(),
+  }),
+});
+
+export const mappingSchema = z.object({ tabs: z.array(z.discriminatedUnion("kind", [taskTab, partnerTab, setTab, progressTab])).min(1) });
 export type SheetMapping = z.infer<typeof mappingSchema>;
 export type TaskTabMapping = z.infer<typeof taskTab>;
 export type PartnerTabMapping = z.infer<typeof partnerTab>;
 export type SetTabMapping = z.infer<typeof setTab>;
+export type ProgressTabMapping = z.infer<typeof progressTab>;
+export const PROGRESS_STEPS = ["built", "released", "demoed", "accepted"] as const;
+export type ProgressStep = (typeof PROGRESS_STEPS)[number];
+export type ItemProgress = Record<ProgressStep, string | null>;
 
 export interface SheetSet {
   ref: string;
@@ -91,6 +116,7 @@ export interface SheetTask {
   completedAt: string | null;
   lastUpdateAt: string | null;
   ownerName: string | null;
+  notes: string | null;
   workstream: TaskTabMapping["defaults"]["workstream"];
   stage: TaskTabMapping["defaults"]["stage"];
   gateKey: TaskTabMapping["defaults"]["gate"];
@@ -182,7 +208,7 @@ export function mapTaskRows(m: TaskTabMapping, rows: string[][]): SheetTask[] {
     if (completedAt && status !== "done" && c.status < 0) status = "done";
     out.push({
       ref: `${m.tab}!${key}`, title, status, dueDate: parseDate(cell(r, c.due)), completedAt,
-      lastUpdateAt: parseDate(cell(r, c.lastTouched)), ownerName: cell(r, c.owner) || null,
+      lastUpdateAt: parseDate(cell(r, c.lastTouched)), ownerName: cell(r, c.owner) || null, notes: cell(r, c.notes) || null,
       workstream: m.defaults.workstream, stage: m.defaults.stage, gateKey: m.defaults.gate, critical: m.defaults.critical,
     });
   }
@@ -242,4 +268,21 @@ export function mapSetRows(m: SetTabMapping, rows: string[][]): SheetSet[] {
     out.set(ref, { ref, partner, transaction: set, direction, testStatus, prodStatus: live ? "live" : "not_live", status });
   }
   return [...out.values()];
+}
+
+/** Progress rows by item code. A blank or dash cell says nothing; a code listed twice keeps its first value for each step. */
+export function mapProgressRows(m: ProgressTabMapping, rows: string[][]): Map<string, ItemProgress> {
+  const { header, body } = table(rows, m.headerRow);
+  const c = Object.fromEntries(Object.entries(m.columns).map(([k, v]) => [k, column(header, v, m.tab)])) as Record<keyof ProgressTabMapping["columns"], number>;
+  const cell = (r: string[], i: number | undefined) => (i !== undefined && i >= 0 ? (r[i] ?? "").trim() : "");
+  const say = (v: string) => (v && !/^[-\u2013\u2014]+$/.test(v) ? v : null);
+  const out = new Map<string, ItemProgress>();
+  for (const r of body) {
+    const key = say(cell(r, c.key));
+    if (!key) continue;
+    const p = out.get(key) ?? { built: null, released: null, demoed: null, accepted: null };
+    for (const step of PROGRESS_STEPS) p[step] ??= say(cell(r, c[step]));
+    out.set(key, p);
+  }
+  return out;
 }

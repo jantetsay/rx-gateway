@@ -8,7 +8,8 @@ import type { DB } from "@/db/client";
 import { audit, newId } from "@/db/repo";
 import * as t from "@/db/schema";
 import { readTabs } from "./google";
-import { mapPartnerRows, mappingSchema, mapSetRows, mapTaskRows } from "./mapping";
+import { codeOf } from "@/domain/streams";
+import { mapPartnerRows, mappingSchema, mapProgressRows, mapSetRows, mapTaskRows, PROGRESS_STEPS, type ItemProgress } from "./mapping";
 
 export type TabReader = (spreadsheetId: string, tabs: string[]) => Promise<Map<string, string[][]>>;
 
@@ -18,12 +19,14 @@ export interface SyncResult {
   tasks: { added: number; updated: number; removed: number };
   partners: { added: number; updated: number; removed: number };
   sets: { added: number; updated: number; removed: number; unmatched: string[] };
+  /** Items that took Built, Released, Demoed or Accepted from a progress tab. */
+  progress: number;
 }
 
 export async function syncSource(db: DB, sourceId: string, actorId: string | null, reader: TabReader = readTabs): Promise<SyncResult> {
   const [src] = await db.select().from(t.sheetSources).where(eq(t.sheetSources.id, sourceId));
   if (!src) throw new Error("No such sheet source");
-  const result: SyncResult = { ok: false, message: "", tasks: { added: 0, updated: 0, removed: 0 }, partners: { added: 0, updated: 0, removed: 0 }, sets: { added: 0, updated: 0, removed: 0, unmatched: [] } };
+  const result: SyncResult = { ok: false, message: "", tasks: { added: 0, updated: 0, removed: 0 }, partners: { added: 0, updated: 0, removed: 0 }, sets: { added: 0, updated: 0, removed: 0, unmatched: [] }, progress: 0 };
   try {
     const mapping = mappingSchema.parse(src.mapping);
     const values = await reader(src.spreadsheetId, mapping.tabs.map((x) => x.tab));
@@ -42,7 +45,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
           const ref = prefix + r.ref;
           seen.add(ref);
           const fields = {
-            title: r.title, status: r.status, dueDate: r.dueDate, completedAt: r.completedAt,
+            title: r.title, status: r.status, dueDate: r.dueDate, completedAt: r.completedAt, description: r.notes,
             lastUpdateAt: r.lastUpdateAt ?? undefined,
             ...(r.ownerName && userByName.has(r.ownerName.toLowerCase()) ? { ownerId: userByName.get(r.ownerName.toLowerCase()) } : {}),
           };
@@ -115,6 +118,23 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
       result.sets.removed = mySets.length;
     }
 
+    // Progress tabs fill Built, Released, Demoed and Accepted on this source's items, by code; the first tab with a value wins.
+    const progress = new Map<string, ItemProgress>();
+    for (const tab of mapping.tabs) {
+      if (tab.kind !== "item_progress") continue;
+      for (const [code, p] of mapProgressRows(tab, values.get(tab.tab) ?? [])) {
+        const have = progress.get(code) ?? { built: null, released: null, demoed: null, accepted: null };
+        for (const step of PROGRESS_STEPS) have[step] ??= p[step];
+        progress.set(code, have);
+      }
+    }
+    for (const ref of seen) {
+      const code = codeOf(ref);
+      const p = (code && progress.get(code)) || { built: null, released: null, demoed: null, accepted: null };
+      if (PROGRESS_STEPS.some((s) => p[s])) result.progress++;
+      await db.update(t.tasks).set(p).where(and(eq(t.tasks.projectId, src.projectId), eq(t.tasks.sourceRef, ref)));
+    }
+
     // Rows gone from the sheet leave the record too.
     const mine = await db.select({ id: t.tasks.id, ref: t.tasks.sourceRef }).from(t.tasks)
       .where(and(eq(t.tasks.projectId, src.projectId), eq(t.tasks.source, "sheet")));
@@ -146,6 +166,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
     const sets = result.sets.added + result.sets.updated;
     result.message = `Read ${result.tasks.added + result.tasks.updated} items and ${result.partners.added + result.partners.updated} partners`
       + (setTabs.length ? `, ${sets} transaction sets` : "")
+      + (mapping.tabs.some((x) => x.kind === "item_progress") ? `. Progress found for ${result.progress} item${result.progress === 1 ? "" : "s"}` : "")
       + (result.sets.unmatched.length ? `. No partner named ${result.sets.unmatched.slice(0, 3).join(", ")}${result.sets.unmatched.length > 3 ? ` and ${result.sets.unmatched.length - 3} more` : ""}` : "");
   } catch (err) {
     result.message = err instanceof Error ? err.message : "Sync failed";

@@ -79,6 +79,13 @@ export interface Task {
   source: "app" | "sheet";
   /** For rows read from a sheet: source, tab and row key. */
   sourceRef?: string | null;
+  /** A sheet row's note or description column, when the mapping names one. */
+  description?: string | null;
+  /** Delivery progress a sheet keeps beside the item, as written there. */
+  built?: string | null;
+  released?: string | null;
+  demoed?: string | null;
+  accepted?: string | null;
 }
 
 export interface Dependency {
