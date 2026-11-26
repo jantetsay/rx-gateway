@@ -4,7 +4,7 @@ import * as repo from "@/db/repo";
 import * as t from "@/db/schema";
 import { evaluateProject } from "@/domain/evaluate";
 import { buildRow } from "@/domain/portfolio";
-import { buildSheetBoards, dueWeeks, nameAndDescription, weekStart } from "@/domain/sheetboard";
+import { buildSheetBoards, dueWeeks, itemCode, nameAndDescription, ticketOf, weekStart } from "@/domain/sheetboard";
 import { WORKSTREAMS } from "@/domain/types";
 
 let db: DB;
@@ -132,5 +132,20 @@ describe("nameAndDescription", () => {
   it("prefers the note and ignores a dash", () => {
     expect(nameAndDescription("Thing: detail", "Note")).toEqual({ name: "Thing", description: "Note" });
     expect(nameAndDescription("Thing", "-")).toEqual({ name: "Thing", description: null });
+  });
+});
+
+describe("itemCode and ticketOf", () => {
+  it("keeps a code and drops a title used as a key", () => {
+    expect(itemCode("s:Delivery!D37")).toBe("D37");
+    expect(itemCode("s:Migration!DM-02")).toBe("DM-02");
+    expect(itemCode("s:Delivery!EDI Orders in")).toBeNull();
+  });
+  it("reads a tracker link as its number and keeps the link only for the tracker's own site", () => {
+    expect(ticketOf("https://app.asana.com/0/111111111/222222222")).toEqual({ number: "222222222", url: "https://app.asana.com/0/111111111/222222222" });
+    expect(ticketOf("https://example.com/0/111111111/333333333")).toEqual({ number: "333333333", url: null });
+    expect(ticketOf("1234567")).toEqual({ number: "1234567", url: null });
+    expect(ticketOf("-")).toBeNull();
+    expect(ticketOf(null)).toBeNull();
   });
 });

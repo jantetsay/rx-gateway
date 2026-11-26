@@ -77,6 +77,8 @@ export const tasks = pgTable("tasks", {
   released: text("released"),
   demoed: text("demoed"),
   accepted: text("accepted"),
+  /** The row's ticket in the team's work tracker, as the sheet has it: a number or a link. */
+  ticket: text("ticket"),
 });
 
 export const dependencies = pgTable("dependencies", {

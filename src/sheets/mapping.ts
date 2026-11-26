@@ -25,6 +25,8 @@ const taskTab = z.object({
     owner: z.string().optional(),
     /** A note or description column, shown under the item. */
     notes: z.string().optional(),
+    /** The ticket in the team's work tracker: a number or a link to it. */
+    ticket: z.string().optional(),
   }),
   statusMap: z.record(z.string(), z.enum(["not_started", "in_progress", "blocked", "done"])).default({}),
 });
@@ -117,6 +119,7 @@ export interface SheetTask {
   lastUpdateAt: string | null;
   ownerName: string | null;
   notes: string | null;
+  ticket: string | null;
   workstream: TaskTabMapping["defaults"]["workstream"];
   stage: TaskTabMapping["defaults"]["stage"];
   gateKey: TaskTabMapping["defaults"]["gate"];
@@ -208,7 +211,7 @@ export function mapTaskRows(m: TaskTabMapping, rows: string[][]): SheetTask[] {
     if (completedAt && status !== "done" && c.status < 0) status = "done";
     out.push({
       ref: `${m.tab}!${key}`, title, status, dueDate: parseDate(cell(r, c.due)), completedAt,
-      lastUpdateAt: parseDate(cell(r, c.lastTouched)), ownerName: cell(r, c.owner) || null, notes: cell(r, c.notes) || null,
+      lastUpdateAt: parseDate(cell(r, c.lastTouched)), ownerName: cell(r, c.owner) || null, notes: cell(r, c.notes) || null, ticket: cell(r, c.ticket) || null,
       workstream: m.defaults.workstream, stage: m.defaults.stage, gateKey: m.defaults.gate, critical: m.defaults.critical,
     });
   }

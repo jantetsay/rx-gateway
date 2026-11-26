@@ -45,7 +45,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
           const ref = prefix + r.ref;
           seen.add(ref);
           const fields = {
-            title: r.title, status: r.status, dueDate: r.dueDate, completedAt: r.completedAt, description: r.notes,
+            title: r.title, status: r.status, dueDate: r.dueDate, completedAt: r.completedAt, description: r.notes, ticket: r.ticket,
             lastUpdateAt: r.lastUpdateAt ?? undefined,
             ...(r.ownerName && userByName.has(r.ownerName.toLowerCase()) ? { ownerId: userByName.get(r.ownerName.toLowerCase()) } : {}),
           };

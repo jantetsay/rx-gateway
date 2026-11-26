@@ -6,7 +6,7 @@
       "tab": "Delivery tasks",
       "headerRow": 1,
       "defaults": { "workstream": "env_config", "stage": "validate_go_live", "gate": "G6", "critical": false },
-      "columns": { "key": "ID", "title": "Task", "status": "Status", "due": "Due", "completed": "Completed", "lastTouched": "Last updated", "owner": "Owner", "notes": "Notes" },
+      "columns": { "key": "ID", "title": "Task", "status": "Status", "due": "Due", "completed": "Completed", "lastTouched": "Last updated", "owner": "Owner", "notes": "Notes", "ticket": "Ticket" },
       "statusMap": { "Open": "not_started", "Working": "in_progress", "Stuck": "blocked", "Closed": "done" }
     },
     {

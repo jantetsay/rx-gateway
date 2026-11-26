@@ -17,6 +17,10 @@ export interface SheetItem {
   description: string | null;
   tab: string;
   /** Built, Released, Demoed and Accepted as the sheet writes them; null where it says nothing. */
+  /** The item's ID in the sheet (D37, DM-02), when its key is a code rather than a title. */
+  code: string | null;
+  /** The work-tracker ticket: its number, and a link only when the sheet gives one to the tracker's own site. */
+  ticket: { number: string | null; url: string | null } | null;
   progress: { built: string | null; released: string | null; demoed: string | null; accepted: string | null };
   due: ISODate | null;
   daysLate: number;
@@ -122,6 +126,25 @@ export function weekBucket(due: ISODate | null, weeks: DueWeek[]): string | null
   return weeks.some((x) => x.start === w) ? w : null;
 }
 
+/** The row's ID from its source reference, when the key is a code like D37, DM-02 or T1 rather than a title. */
+export function itemCode(ref: string | null | undefined): string | null {
+  const c = codeOf(ref);
+  return c && /^[A-Z]{1,4}-?\d+[a-z]?$/i.test(c) ? c : null;
+}
+
+/** A ticket cell as a number and, for a link to the work tracker's own site, the link. */
+export function ticketOf(raw: string | null): { number: string | null; url: string | null } | null {
+  const v = raw?.trim();
+  if (!v || /^[-\u2013\u2014]+$/.test(v)) return null;
+  let url: string | null = null;
+  try {
+    const u = new URL(v);
+    if (u.protocol === "https:" && (u.hostname === "app.asana.com")) url = u.href;
+  } catch { /* not a link */ }
+  const number = v.match(/(\d{6,})(?!.*\d{6,})/)?.[1] ?? (/^#?\w[\w-]*$/.test(v) ? v.replace(/^#/, "") : null);
+  return number || url ? { number, url } : null;
+}
+
 /** Splits "Anticipated Purchasing: demand-planning view" into a name and a description; a sheet note wins as the description. */
 export function nameAndDescription(title: string, note: string | null): { name: string; description: string | null } {
   const at = title.indexOf(":");
@@ -190,6 +213,7 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
     const open = tasks.filter((t) => t.status !== "done");
     const item = (t: (typeof tasks)[number]): SheetItem => ({
       id: t.id, title: t.title, ...nameAndDescription(t.title, t.description ?? null), tab: tabOf(t.sourceRef), due: t.dueDate,
+      code: itemCode(t.sourceRef), ticket: ticketOf(t.ticket ?? null),
       progress: { built: t.built ?? null, released: t.released ?? null, demoed: t.demoed ?? null, accepted: t.accepted ?? null },
       daysLate: t.dueDate && t.dueDate < asOf ? workingDaysBetween(t.dueDate, asOf) : 0,
       owner: person(t.ownerId), blocked: t.status === "blocked",

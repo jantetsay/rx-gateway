@@ -181,7 +181,7 @@ function Step({ v }: { v: string | null }) {
 
 const STEPS = [["built", "Built"], ["released", "Released"], ["demoed", "Demoed"], ["accepted", "Accepted"]] as const;
 
-/** One work stream's items as a plain list: name, a short description, due date, then Built, Released, Demoed and Accepted. Soonest first. */
+/** One work stream's items as a plain list: delivery ID, name and a short description, ticket number, due date, then Built, Released, Demoed and Accepted. Soonest first. */
 function StreamList({ projectId, view, items, stream, week, board }: { projectId: string; view: View; items: SheetItem[]; stream: StreamKey; week: string | null; board: SheetBoard }) {
   const base = `/projects/${projectId}/board?view=${view}`;
   const shown = items.filter((i) => i.stream === stream && (!week || i.week === week))
@@ -199,10 +199,12 @@ function StreamList({ projectId, view, items, stream, week, board }: { projectId
       </p>
       {shown.length === 0 ? <p className="rounded-xl border border-line bg-white p-5 text-sm text-gray-500 shadow-sm">Nothing here.</p> : (
         <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
-          <table className="w-full min-w-[48rem] text-sm">
+          <table className="w-full min-w-[64rem] text-sm">
             <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
               <tr>
-                <th className="px-4 py-2">Item</th>
+                <th className="px-4 py-2">Delivery ID</th>
+                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2">Asana #</th>
                 <th className="px-3 py-2">Due</th>
                 {STEPS.map(([k, l]) => <th key={k} className="w-24 px-3 py-2">{l}</th>)}
               </tr>
@@ -210,9 +212,15 @@ function StreamList({ projectId, view, items, stream, week, board }: { projectId
             <tbody className="divide-y divide-line">
               {shown.map((i) => (
                 <tr key={i.id} className="align-top">
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold">{i.code ?? <span className="font-normal text-gray-300" aria-label="No ID in the sheet">—</span>}</td>
+                  <td className="px-3 py-3">
                     <div className="font-semibold">{i.name}{i.blocked && <span className="ml-2 rounded bg-bad-bg px-1.5 text-[11px] font-semibold text-bad">Blocked</span>}</div>
                     {i.description && <p className="mt-0.5 text-sm text-gray-600">{i.description}</p>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
+                    {!i.ticket ? <span className="font-sans text-sm text-gray-300" aria-label="No ticket in the sheet">—</span>
+                      : i.ticket.url ? <a href={i.ticket.url} target="_blank" rel="noopener noreferrer">{i.ticket.number ?? "Open"}</a>
+                      : i.ticket.number}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3">
                     {i.due ? <div className="font-semibold">{fmtDate(i.due)}</div> : <span className="text-gray-400">No due date</span>}

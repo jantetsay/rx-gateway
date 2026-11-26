@@ -86,6 +86,8 @@ export interface Task {
   released?: string | null;
   demoed?: string | null;
   accepted?: string | null;
+  /** The row's work-tracker ticket as the sheet has it: a number or a link. */
+  ticket?: string | null;
 }
 
 export interface Dependency {
