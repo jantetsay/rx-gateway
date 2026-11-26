@@ -1,0 +1,70 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { memoryDb, type DB } from "@/db/client";
+import * as repo from "@/db/repo";
+import * as t from "@/db/schema";
+import { evaluateProject } from "@/domain/evaluate";
+import { WORKSTREAMS } from "@/domain/types";
+import { syncSource } from "@/sheets/sync";
+
+let db: DB;
+let projectId: string;
+
+beforeAll(async () => {
+  db = await memoryDb();
+  await db.insert(t.users).values({ id: "u1", name: "Pat Example", email: "pat@example.com", role: "admin" });
+  await db.insert(t.clients).values({ id: "c1", name: "Example Distribution Co", segment: "Wholesaler" });
+  projectId = await repo.createProject(db, {
+    clientId: "c1", name: "Onboarding", stage: "deep_dive", start: "2026-11-02", modules: ["ERP"], tier: 2, pmId: "u1",
+    targetWindowStart: null, targetWindowEnd: "2027-03-31", workstreams: [...WORKSTREAMS], contractSigned: "2026-11-02",
+  }, "u1");
+}, 30_000);
+
+describe("records and audit", () => {
+  it("lays out a project from the template and evaluates it", async () => {
+    const [s] = await repo.loadSnapshots(db, [projectId]);
+    expect(s.gates).toHaveLength(9);
+    expect(s.clientRoles.every((r) => r.personName === null)).toBe(true);
+    const e = evaluateProject(s, "2026-11-03");
+    expect(e.computed.reasons.join(" ")).toMatch(/Unnamed client role/);
+  });
+  it("records every change in the audit log", async () => {
+    const [s] = await repo.loadSnapshots(db, [projectId]);
+    await repo.updateTask(db, s.tasks.find((x) => x.title.startsWith("Kickoff"))!.id, { ownerId: "u1", evidence: "Notes on file" }, "u1");
+    const log = await db.select().from(t.auditLog).where(eq(t.auditLog.entity, "task"));
+    expect(log.length).toBeGreaterThan(0);
+  });
+  it("refuses a hand change without a written reason", async () => {
+    await expect(repo.addOverride(db, { projectId, scope: "project", target: projectId, color: "green", reason: "" }, "u1")).rejects.toThrow(/written reason/);
+  });
+  it("won't pass a gate until every signer has signed, and G7a needs the committed date", async () => {
+    const [s] = await repo.loadSnapshots(db, [projectId]);
+    const g7a = s.gates.find((g) => g.key === "G7a")!;
+    await expect(repo.sitGate(db, g7a.id, "passed", {}, "u1")).rejects.toThrow(/signer/);
+    for (const sg of g7a.signers) { await repo.nameSigner(db, sg.id, "Someone", "u1"); await repo.signGate(db, sg.id, "u1"); }
+    await expect(repo.sitGate(db, g7a.id, "passed", {}, "u1")).rejects.toThrow(/commits the go-live date/);
+    await repo.sitGate(db, g7a.id, "passed", { committedDate: "2027-03-15" }, "u1");
+    const [after] = await repo.loadSnapshots(db, [projectId]);
+    expect(after.project.committedDate).toBe("2027-03-15");
+  });
+  it("reads a sheet one way and keeps sheet-owned fields read-only in the app", async () => {
+    await db.insert(t.sheetSources).values({
+      id: "src1", projectId, label: "Tracker", spreadsheetId: "fake",
+      mapping: { tabs: [{ kind: "tasks", tab: "Delivery", defaults: { workstream: "data", stage: "data", gate: "G5" }, columns: { key: "Code", title: "Task", status: "State", due: "Due" } }] },
+    });
+    const reader = async () => new Map([["Delivery", [["Code", "Task", "State", "Due"], ["X1", "Made-up item", "OPEN", "2026-12-01"]]]]);
+    const r = await syncSource(db, "src1", "u1", reader);
+    expect(r).toMatchObject({ ok: true, tasks: { added: 1 } });
+    const [row] = await db.select().from(t.tasks).where(eq(t.tasks.source, "sheet"));
+    await expect(repo.updateTask(db, row.id, { dueDate: "2026-12-05" }, "u1")).rejects.toThrow(/comes from the sheet/);
+    await repo.updateTask(db, row.id, { ownerId: "u1" }, "u1");
+    const again = await syncSource(db, "src1", "u1", async () => new Map([["Delivery", [["Code", "Task", "State", "Due"]]]]));
+    expect(again.tasks.removed).toBe(1);
+  });
+  it("reports a sheet that can't be read without throwing", async () => {
+    const r = await syncSource(db, "src1", "u1", async () => { throw new Error("The sheet isn't shared"); });
+    expect(r.ok).toBe(false);
+    const [src] = await db.select().from(t.sheetSources).where(eq(t.sheetSources.id, "src1"));
+    expect(src.lastResult).toMatch(/isn't shared/);
+  });
+});
