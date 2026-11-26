@@ -17,8 +17,12 @@ export interface SheetItem {
   description: string | null;
   tab: string;
   /** Built, Released, Demoed and Accepted as the sheet writes them; null where it says nothing. */
-  /** The item's ID in the sheet (D37, DM-02), when its key is a code rather than a title. */
+  /** The item's ID in the sheet (D37, DM-02, A04), when its key is a code rather than a title. */
   code: string | null;
+  /** The delivery ID: the sheet's own delivery column where mapped, else the code. */
+  deliveryId: string | null;
+  /** The sheet's status words as written. */
+  status: string | null;
   /** The work-tracker ticket: its number, and a link only when the sheet gives one to the tracker's own site. */
   ticket: { number: string | null; url: string | null } | null;
   progress: { built: string | null; released: string | null; demoed: string | null; accepted: string | null };
@@ -67,6 +71,20 @@ export interface TabSplit { tab: string; pastDue: number; dueSoon: number; later
 /** Open items by the week (Monday) they are due. */
 export interface DueWeek { start: ISODate; pastDue: number; upcoming: number; isThisWeek: boolean }
 
+/** A tab with its own card on the dashboard (a stakeholder's list): its items stay out of the main counts. */
+export interface ListCard {
+  key: string;
+  label: string;
+  open: number;
+  done: number;
+  pastDue: number;
+  total: number;
+  /** Items by the sheet's status words, most common first. */
+  byStatus: { label: string; count: number }[];
+  /** Every item, open first. */
+  items: (SheetItem & { done: boolean })[];
+}
+
 export interface SheetBoard {
   row: PortfolioRow;
   sheetOnly: boolean;
@@ -86,6 +104,8 @@ export interface SheetBoard {
   /** One entry per work stream that has items, core streams always, in a fixed order. */
   byStream: StreamSplit[];
   heat: StreamHeat;
+  /** Tabs mapped to their own card, outside the main counts. */
+  cards: ListCard[];
   /** True when no open item names an owner: the sheet probably has no owner column. */
   noOwners: boolean;
 }
@@ -125,6 +145,9 @@ export function weekBucket(due: ISODate | null, weeks: DueWeek[]): string | null
   if (w < weeks[0].start) return weeks[0].start;
   return weeks.some((x) => x.start === w) ? w : null;
 }
+
+/** A URL-safe key for a card's name. */
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list";
 
 /** The row's ID from its source reference, when the key is a code like D37, DM-02 or T1 rather than a title. */
 export function itemCode(ref: string | null | undefined): string | null {
@@ -207,13 +230,18 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
     const sheetTasks = s.tasks.filter((t) => t.source === "sheet");
     if (!sheetOnly && !srcs.length && !sheetTasks.length) continue;
     // A sheet-run project shows every item; a template project shows only what came from its sheet.
-    const tasks = sheetOnly ? s.tasks : sheetTasks;
+    const all = sheetOnly ? s.tasks : sheetTasks;
+    // Rows from a tab with its own card stay out of the main counts.
+    const tasks = all.filter((t) => !t.card);
     const person = (id: string | null) => (id ? s.people.get(id)?.name ?? null : null);
 
     const open = tasks.filter((t) => t.status !== "done");
     const item = (t: (typeof tasks)[number]): SheetItem => ({
-      id: t.id, title: t.title, ...nameAndDescription(t.title, t.description ?? null), tab: tabOf(t.sourceRef), due: t.dueDate,
-      code: itemCode(t.sourceRef), ticket: ticketOf(t.ticket ?? null),
+      id: t.id, title: t.title,
+      // A stakeholder's list keeps each ask whole; its description comes only from the sheet's note.
+      ...(t.card ? { name: t.title, description: t.description ?? null } : nameAndDescription(t.title, t.description ?? null)), tab: tabOf(t.sourceRef), due: t.dueDate,
+      code: itemCode(t.sourceRef), deliveryId: t.card ? (t.deliveryId ?? null) : (t.deliveryId ?? itemCode(t.sourceRef)), status: t.sheetStatus ?? null,
+      ticket: ticketOf(t.ticket ?? null),
       progress: { built: t.built ?? null, released: t.released ?? null, demoed: t.demoed ?? null, accepted: t.accepted ?? null },
       daysLate: t.dueDate && t.dueDate < asOf ? workingDaysBetween(t.dueDate, asOf) : 0,
       owner: person(t.ownerId), blocked: t.status === "blocked",
@@ -254,8 +282,27 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       split.set(tab, x);
     }
 
+    const cardMap = new Map<string, ListCard>();
+    for (const t of all) {
+      if (!t.card) continue;
+      const key = slug(t.card);
+      const c = cardMap.get(key) ?? { key, label: t.card, open: 0, done: 0, pastDue: 0, total: 0, byStatus: [], items: [] };
+      const it = { ...item(t), done: t.status === "done" };
+      c.total++;
+      if (it.done) c.done++; else { c.open++; if (it.daysLate > 0) c.pastDue++; }
+      c.items.push(it);
+      cardMap.set(key, c);
+    }
+    const cards = [...cardMap.values()].map((c) => {
+      const n = new Map<string, number>();
+      for (const i of c.items) n.set(i.status ?? "No status", (n.get(i.status ?? "No status") ?? 0) + 1);
+      const order = (x: SheetItem) => x.code ?? x.name;
+      c.items.sort((a, b) => Number(a.done) - Number(b.done) || (a.due ?? "9999").localeCompare(b.due ?? "9999") || order(a).localeCompare(order(b), undefined, { numeric: true }));
+      return { ...c, byStatus: [...n].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)) };
+    });
+
     out.push({
-      row, sheetOnly, total: tasks.length,
+      row, sheetOnly, total: tasks.length, cards,
       byTab: [...split.values()].sort((a, b) => (b.pastDue + b.dueSoon + b.later + b.noDate) - (a.pastDue + a.dueSoon + a.later + a.noDate)),
       weeks,
       byStream: streamSplits(tasks.map((t) => ({ done: t.status === "done", item: item(t) })), asOf, dueSoonDays),

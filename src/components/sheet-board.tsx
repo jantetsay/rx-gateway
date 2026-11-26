@@ -3,7 +3,7 @@
 // Status colors always come with a word or an icon, never color alone.
 
 import Link from "next/link";
-import type { SheetBoard, StreamSplit } from "@/domain/sheetboard";
+import type { ListCard, SheetBoard, StreamSplit } from "@/domain/sheetboard";
 import { StreamHeatMap } from "@/components/heatmaps";
 import { STAGE_LABEL } from "@/domain/template";
 import { ColorBadge, Reasons, fmtDate } from "@/components/ui";
@@ -85,6 +85,29 @@ function StreamCard({ s, href }: { s: StreamSplit; href: string }) {
   );
 }
 
+/** A stakeholder's list with its own card: open and done, and its items by the sheet's status words. */
+function ListCardTile({ c, href }: { c: ListCard; href: string }) {
+  const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+  return (
+    <TileShell href={href}>
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: c.pastDue ? "var(--color-st-critical)" : "var(--color-navy)" }} />
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-600">{c.label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="font-serif text-3xl font-bold leading-none text-navy">{c.open}</span>
+        <span className="text-xs text-gray-600">open</span>
+        <span className="text-xs text-gray-600">· {c.done} done</span>
+      </div>
+      <ul className="mt-1.5 space-y-0.5 text-xs text-gray-700">
+        {c.byStatus.slice(0, 4).map((s) => <li key={s.label} className="flex justify-between gap-2"><span className="truncate">{s.label}</span><span className="font-semibold">{s.count}</span></li>)}
+      </ul>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-card" role="img" aria-label={`${c.done} of ${c.total} done`}>
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--color-series-1)" }} />
+      </div>
+      <div className="mt-1 text-[11px] text-gray-600">{c.done} of {c.total} done<span className="float-right font-semibold text-navy">Details</span></div>
+    </TileShell>
+  );
+}
+
 // ---------- The board ----------
 
 export function SheetBoardCard({ b }: { b: SheetBoard }) {
@@ -139,6 +162,18 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
           {b.byStream.map((s) => <StreamCard key={s.key} s={s} href={`/projects/${p.id}/board?view=open&stream=${s.key}`} />)}
         </div>
       </div>
+
+      {b.cards.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h3 className="text-base font-bold">Stakeholder lists</h3>
+            <span className="text-xs text-gray-600">Kept separate: not counted in the open totals above</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {b.cards.map((c) => <ListCardTile key={c.key} c={c} href={`/projects/${p.id}/board?view=list&list=${c.key}`} />)}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
         <h3 className="text-base font-bold">When each stream&apos;s work is due</h3>

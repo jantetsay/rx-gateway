@@ -79,6 +79,12 @@ export const tasks = pgTable("tasks", {
   accepted: text("accepted"),
   /** The row's ticket in the team's work tracker, as the sheet has it: a number or a link. */
   ticket: text("ticket"),
+  /** Rows from a tab mapped to its own dashboard card (a stakeholder's list) carry that card's name; they stay out of the main counts. */
+  card: text("card"),
+  /** The sheet's status words as written, shown beside the item. */
+  sheetStatus: text("sheet_status"),
+  /** A delivery ID the sheet keeps in its own column, when the row's key is something else. */
+  deliveryId: text("delivery_id"),
 });
 
 export const dependencies = pgTable("dependencies", {

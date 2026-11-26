@@ -35,6 +35,8 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
     const seen = new Set<string>();
     const seenPartners = new Set<string>();
     const seenSets = new Set<string>();
+    /** Progress a tasks tab carries on its own rows; a progress tab fills only what these leave blank. */
+    const own = new Map<string, ItemProgress>();
     const prefix = `${src.id}:`;
     const now = new Date().toISOString();
 
@@ -44,8 +46,10 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
         for (const r of mapTaskRows(tab, rows)) {
           const ref = prefix + r.ref;
           seen.add(ref);
+          own.set(ref, r.progress);
           const fields = {
             title: r.title, status: r.status, dueDate: r.dueDate, completedAt: r.completedAt, description: r.notes, ticket: r.ticket,
+            card: r.card, sheetStatus: r.sheetStatus, deliveryId: r.deliveryId,
             lastUpdateAt: r.lastUpdateAt ?? undefined,
             ...(r.ownerName && userByName.has(r.ownerName.toLowerCase()) ? { ownerId: userByName.get(r.ownerName.toLowerCase()) } : {}),
           };
@@ -130,7 +134,9 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
     }
     for (const ref of seen) {
       const code = codeOf(ref);
-      const p = (code && progress.get(code)) || { built: null, released: null, demoed: null, accepted: null };
+      const found = (code && progress.get(code)) || { built: null, released: null, demoed: null, accepted: null };
+      const mine = own.get(ref);
+      const p = Object.fromEntries(PROGRESS_STEPS.map((s) => [s, mine?.[s] ?? found[s]])) as ItemProgress;
       if (PROGRESS_STEPS.some((s) => p[s])) result.progress++;
       await db.update(t.tasks).set(p).where(and(eq(t.tasks.projectId, src.projectId), eq(t.tasks.sourceRef, ref)));
     }

@@ -8,6 +8,8 @@ import { GATES, STAGES, WORKSTREAMS, type TaskStatus } from "@/domain/types";
 const taskTab = z.object({
   kind: z.literal("tasks"),
   tab: z.string().min(1),
+  /** Give this tab's rows their own dashboard card under this name (a stakeholder's list, say). They stay out of the main open counts. */
+  card: z.string().min(1).optional(),
   headerRow: z.number().int().min(1).default(1),
   defaults: z.object({
     workstream: z.enum(WORKSTREAMS),
@@ -27,6 +29,12 @@ const taskTab = z.object({
     notes: z.string().optional(),
     /** The ticket in the team's work tracker: a number or a link to it. */
     ticket: z.string().optional(),
+    /** A delivery ID in its own column, when the key column is something else. */
+    delivery: z.string().optional(),
+    built: z.string().optional(),
+    released: z.string().optional(),
+    demoed: z.string().optional(),
+    accepted: z.string().optional(),
   }),
   statusMap: z.record(z.string(), z.enum(["not_started", "in_progress", "blocked", "done"])).default({}),
 });
@@ -120,6 +128,11 @@ export interface SheetTask {
   ownerName: string | null;
   notes: string | null;
   ticket: string | null;
+  deliveryId: string | null;
+  /** The status cell as written. */
+  sheetStatus: string | null;
+  card: string | null;
+  progress: ItemProgress;
   workstream: TaskTabMapping["defaults"]["workstream"];
   stage: TaskTabMapping["defaults"]["stage"];
   gateKey: TaskTabMapping["defaults"]["gate"];
@@ -169,6 +182,9 @@ export function guessStatus(raw: string, map: Record<string, TaskStatus>): TaskS
   return "in_progress";
 }
 
+/** A cell that says something: blank and dash cells say nothing. */
+const say = (v: string) => (v && !/^[-\u2013\u2014]+$/.test(v) ? v : null);
+
 function table(rows: string[][], headerRow: number): { header: string[]; body: string[][] } {
   const header = (rows[headerRow - 1] ?? []).map((h) => h.replace(/\s+/g, " ").trim());
   return { header, body: rows.slice(headerRow) };
@@ -212,6 +228,8 @@ export function mapTaskRows(m: TaskTabMapping, rows: string[][]): SheetTask[] {
     out.push({
       ref: `${m.tab}!${key}`, title, status, dueDate: parseDate(cell(r, c.due)), completedAt,
       lastUpdateAt: parseDate(cell(r, c.lastTouched)), ownerName: cell(r, c.owner) || null, notes: cell(r, c.notes) || null, ticket: cell(r, c.ticket) || null,
+      deliveryId: say(cell(r, c.delivery)), sheetStatus: cell(r, c.status) || null, card: m.card ?? null,
+      progress: { built: say(cell(r, c.built)), released: say(cell(r, c.released)), demoed: say(cell(r, c.demoed)), accepted: say(cell(r, c.accepted)) },
       workstream: m.defaults.workstream, stage: m.defaults.stage, gateKey: m.defaults.gate, critical: m.defaults.critical,
     });
   }
@@ -278,7 +296,6 @@ export function mapProgressRows(m: ProgressTabMapping, rows: string[][]): Map<st
   const { header, body } = table(rows, m.headerRow);
   const c = Object.fromEntries(Object.entries(m.columns).map(([k, v]) => [k, column(header, v, m.tab)])) as Record<keyof ProgressTabMapping["columns"], number>;
   const cell = (r: string[], i: number | undefined) => (i !== undefined && i >= 0 ? (r[i] ?? "").trim() : "");
-  const say = (v: string) => (v && !/^[-\u2013\u2014]+$/.test(v) ? v : null);
   const out = new Map<string, ItemProgress>();
   for (const r of body) {
     const key = say(cell(r, c.key));

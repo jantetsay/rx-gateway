@@ -36,6 +36,13 @@
       "when": 1795722209469,
       "tag": "0004_task_ticket",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795722343775,
+      "tag": "0005_task_card",
+      "breakpoints": true
     }
   ]
 }

@@ -88,6 +88,10 @@ export interface Task {
   accepted?: string | null;
   /** The row's work-tracker ticket as the sheet has it: a number or a link. */
   ticket?: string | null;
+  /** Set for rows from a tab with its own dashboard card; they stay out of the main counts. */
+  card?: string | null;
+  sheetStatus?: string | null;
+  deliveryId?: string | null;
 }
 
 export interface Dependency {

@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { today } from "@/domain/calendar";
-import { buildSheetBoards, type SheetBoard, type SheetItem, type SheetPartner } from "@/domain/sheetboard";
+import { buildSheetBoards, type ListCard, type SheetBoard, type SheetItem, type SheetPartner } from "@/domain/sheetboard";
 import { STREAMS, STREAM_LABEL, isStream, type StreamKey } from "@/domain/streams";
 import { setGrid } from "@/domain/setlevels";
 import { SetHeatMap, StreamHeatMap } from "@/components/heatmaps";
@@ -179,6 +179,13 @@ function Step({ v }: { v: string | null }) {
   return <span className="text-gray-700">{t}</span>;
 }
 
+const Dash = () => <span className="text-gray-300" aria-label="Not in the sheet">—</span>;
+
+function Ticket({ t }: { t: SheetItem["ticket"] }) {
+  if (!t) return <Dash />;
+  return <span className="font-mono text-xs">{t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer">{t.number ?? "Open"}</a> : t.number}</span>;
+}
+
 const STEPS = [["built", "Built"], ["released", "Released"], ["demoed", "Demoed"], ["accepted", "Accepted"]] as const;
 
 /** One work stream's items as a plain list: delivery ID, name and a short description, ticket number, due date, then Built, Released, Demoed and Accepted. Soonest first. */
@@ -212,16 +219,12 @@ function StreamList({ projectId, view, items, stream, week, board }: { projectId
             <tbody className="divide-y divide-line">
               {shown.map((i) => (
                 <tr key={i.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3 font-semibold">{i.code ?? <span className="font-normal text-gray-300" aria-label="No ID in the sheet">—</span>}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold">{i.deliveryId ?? <Dash />}</td>
                   <td className="px-3 py-3">
                     <div className="font-semibold">{i.name}{i.blocked && <span className="ml-2 rounded bg-bad-bg px-1.5 text-[11px] font-semibold text-bad">Blocked</span>}</div>
                     {i.description && <p className="mt-0.5 text-sm text-gray-600">{i.description}</p>}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">
-                    {!i.ticket ? <span className="font-sans text-sm text-gray-300" aria-label="No ticket in the sheet">—</span>
-                      : i.ticket.url ? <a href={i.ticket.url} target="_blank" rel="noopener noreferrer">{i.ticket.number ?? "Open"}</a>
-                      : i.ticket.number}
-                  </td>
+                  <td className="whitespace-nowrap px-3 py-3"><Ticket t={i.ticket} /></td>
                   <td className="whitespace-nowrap px-3 py-3">
                     {i.due ? <div className="font-semibold">{fmtDate(i.due)}</div> : <span className="text-gray-400">No due date</span>}
                     {i.daysLate > 0 && <div className="text-xs font-semibold text-bad">Past due, {wd(i.daysLate)}</div>}
@@ -234,6 +237,61 @@ function StreamList({ projectId, view, items, stream, week, board }: { projectId
         </div>
       )}
       {!anyProgress && shown.length > 0 && <p className="text-xs text-gray-500">The sheet has no Built, Released, Demoed or Accepted for these items yet. A dash means the sheet says nothing.</p>}
+    </div>
+  );
+}
+
+const LFILTERS = { open: "Open", done: "Done", all: "All" } as const;
+type LFilter = keyof typeof LFILTERS;
+
+/** A stakeholder's list: every ask with its IDs, ticket, status words and Built, Released, Demoed and Accepted. */
+function ListView({ projectId, card, filter }: { projectId: string; card: ListCard; filter: LFilter }) {
+  const base = `/projects/${projectId}/board?view=list&list=${card.key}`;
+  const shown = card.items.filter((i) => (filter === "all" ? true : filter === "done" ? i.done : !i.done));
+  const n = { open: card.open, done: card.done, all: card.total };
+  return (
+    <div className="space-y-3">
+      <nav className="flex flex-wrap gap-2 text-xs" aria-label="Filter the list">
+        {(Object.keys(LFILTERS) as LFilter[]).map((f) => (
+          <Link key={f} href={`${base}&filter=${f}`} aria-current={f === filter ? "page" : undefined}
+            className={`rounded-full border px-3 py-1 font-semibold no-underline ${f === filter ? "border-navy bg-navy text-white" : "border-line bg-white text-navy hover:border-navy/40"}`}>
+            {LFILTERS[f]} · {n[f]}
+          </Link>
+        ))}
+      </nav>
+      {shown.length === 0 ? <p className="rounded-xl border border-line bg-white p-5 text-sm text-gray-500 shadow-sm">Nothing here.</p> : (
+        <div className="overflow-x-auto rounded-xl border border-line bg-white shadow-sm">
+          <table className="w-full min-w-[72rem] text-sm">
+            <thead className="bg-card text-left text-xs uppercase tracking-wide text-gray-600">
+              <tr>
+                <th className="px-4 py-2">ID</th>
+                <th className="px-3 py-2">Delivery ID</th>
+                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2">Asana #</th>
+                <th className="px-3 py-2">Status</th>
+                {STEPS.map(([k, l]) => <th key={k} className="w-24 px-3 py-2">{l}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {shown.map((i) => (
+                <tr key={i.id} className="align-top">
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold">{i.code ?? <Dash />}</td>
+                  <td className="whitespace-nowrap px-3 py-3">{i.deliveryId ?? <Dash />}</td>
+                  <td className="px-3 py-3">
+                    <div className="font-semibold">{i.name}</div>
+                    {i.description && <p className="mt-0.5 text-sm text-gray-600">{i.description}</p>}
+                    {i.due && <div className={`mt-0.5 text-xs ${i.daysLate > 0 ? "font-semibold text-bad" : "text-gray-600"}`}>Due {fmtDate(i.due)}{i.daysLate > 0 ? `, past due ${wd(i.daysLate)}` : ""}</div>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3"><Ticket t={i.ticket} /></td>
+                  <td className="px-3 py-3 text-gray-700">{i.status ?? <Dash />}</td>
+                  {STEPS.map(([k]) => <td key={k} className="whitespace-nowrap px-3 py-3"><Step v={i.progress[k]} /></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-gray-500">This list has its own card and is not counted in the dashboard&apos;s open totals. A dash means the sheet says nothing.</p>
     </div>
   );
 }
@@ -296,6 +354,9 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
   const b = buildSheetBoards([row], sources, asOf)[0];
   const raw = one(sp.view);
   const view: View = raw && raw in VIEWS ? (raw as View) : "partners";
+  const list = raw === "list" ? b?.cards.find((c) => c.key === one(sp.list)) ?? null : null;
+  const rawL = one(sp.filter);
+  const lfilter: LFilter = rawL && rawL in LFILTERS ? (rawL as LFilter) : "open";
   const rawF = one(sp.filter);
   const filter: PFilter = rawF && rawF in PFILTERS ? (rawF as PFilter) : "all";
   const rawS = one(sp.stream);
@@ -311,6 +372,19 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
     nodate: b.open.filter((i) => !i.due),
   } : null;
   const count = (v: View) => (!b ? 0 : v === "partners" ? b.partners.length : lists![v].length);
+
+  if (list) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <Link href="/" className="text-xs">Back to the dashboard</Link>
+          <h1 className="text-2xl font-bold">{list.label} · {client}</h1>
+          <p className="text-sm text-gray-600">{list.open} open and {list.done} done of {list.total}, as of {fmtDate(asOf)}, from the client&apos;s tracking sheet.</p>
+        </div>
+        <ListView projectId={id} card={list} filter={lfilter} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
