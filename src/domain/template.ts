@@ -7,6 +7,11 @@ import type { GateKey, StageKey, TaskKind, WorkstreamKey } from "./types";
 
 export const TEMPLATE_VERSION = "2026.11-1";
 
+/** Recorded instead of a template version on a project whose work comes only from
+ *  its tracking sheet: no template tasks, gates or forecast, so its color comes
+ *  from the sheet's own items. */
+export const SHEET_PLAN = "sheet";
+
 export const STAGE_LABEL: Record<StageKey, string> = {
   pre_discovery: "Pre-discovery",
   deep_dive: "Deep-dive discovery",

@@ -10,13 +10,13 @@ Needs Node 22 or newer.
 
 ```bash
 npm install
-npm run db:reset     # local database with made-up sample clients
+npm run db:reset     # empty local database: one admin user, no clients
 npm run dev          # http://localhost:3000
 ```
 
 The database is PGlite (Postgres compiled to WebAssembly) in `.data/pglite`, so there is no database server to install. The SQL is plain Postgres, so it moves to a hosted Postgres later without changes to the schema.
 
-Other commands: `npm test` (rules and database tests), `npm run lint` (type check), `npm run build`.
+Other commands: `npm test` (rules and database tests), `npm run lint` (type check), `npm run build`, and `npm run db:sample`, which wipes the local database and loads made-up demo clients instead. Never run `db:sample` on a database that holds real clients: the two don't mix.
 
 The sample clients are all invented and marked "(sample)". Never load real client data, patient data, real pricing or credentials into this repository, its tests or its seed.
 
@@ -24,7 +24,7 @@ The sample clients are all invented and marked "(sample)". Never load real clien
 
 | Page | What it shows |
 |---|---|
-| Dashboard | Counts by color, clients that need attention, Level 3 escalations, go-lives in the next 90 days, gates this week, hand changes in force, the pre-discovery pipeline, clients with no update in a week. Weekly refresh button. |
+| Dashboard | First, for each client fed from a tracking sheet: open and past-due counts, the past-due items with how late each is, what is due in the next two weeks, owners where the sheet names them, EDI partners with their next step and date, and when the sheet was last read. Then counts by color, clients that need attention, Level 3 escalations, go-lives in the next 90 days, gates this week, hand changes in force, the pre-discovery pipeline, clients with no update in a week. Weekly refresh button. |
 | Portfolio | Every client, worst first, with filters by lane, color and stage, and a workstream heat strip. |
 | Client page | Summary with dates (target window, no-earlier-than from G5, committed from G7a, forecast, slip), heat map of workstreams by gate, gates with signers and sittings, escalations, client roles, and every work item with status and owner. |
 | EDI partners | Per client: the ten partner stages, test matrix by transaction set and direction, spec gaps, expiries, stage rules. |
@@ -60,7 +60,7 @@ To connect, the repository owner needs to:
 1. Create a Google Cloud service account and turn on the Google Sheets API for its project.
 2. Make a key for it and put it in `.env.local` as `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole JSON on one line), or point `GOOGLE_APPLICATION_CREDENTIALS` at the key file. See `.env.example`.
 3. Share each tracking sheet with the service account's email as Viewer. Some Google Workspace organizations block sharing outside the domain; an admin may need to allow it.
-4. In the app, open Sheets. If the client isn't in the app yet, add it under "Add a client". Then add the sheet with a mapping and press Sync now.
+4. In the app, open Sheets. If the client isn't in the app yet, add it under "Add a client" and leave "Work comes from" on "Its tracking sheet only", so the dashboard shows only the sheet's items. Then add the sheet with a mapping and press Sync now.
 
 `sheets.config.example.json` shows a mapping. Mappings hold tab and column names only. Keep any real mapping out of git (`sheets.config.json` is ignored).
 

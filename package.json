@@ -9,8 +9,9 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "db:seed": "tsx scripts/seed.ts",
-    "db:reset": "rm -rf .data && tsx scripts/seed.ts"
+    "db:init": "tsx scripts/init.ts",
+    "db:reset": "rm -rf .data && tsx scripts/init.ts",
+    "db:sample": "rm -rf .data && tsx scripts/seed.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.6.0",

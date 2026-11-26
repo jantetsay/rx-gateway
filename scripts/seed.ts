@@ -14,7 +14,7 @@ const db = await getDb();
 
 const existing = await db.select().from(t.users);
 if (existing.length) {
-  console.log("Database already has data. Run `npm run db:reset` to start over.");
+  console.log("Database already has data. Run `npm run db:sample` to start over with sample data.");
   process.exit(0);
 }
 

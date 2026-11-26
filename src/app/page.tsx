@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { today } from "@/domain/calendar";
 import { buildLanding } from "@/domain/portfolio";
+import { buildSheetBoards } from "@/domain/sheetboard";
+import { getDb } from "@/db/client";
+import * as t from "@/db/schema";
+import { SheetBoardCard } from "@/components/sheet-board";
 import { STAGE_LABEL } from "@/domain/template";
 import { loadRows } from "@/server/load";
 import { weeklyRefresh } from "./actions";
@@ -15,6 +19,8 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
   const asOf = today();
   const rows = await loadRows(asOf);
   const L = buildLanding(rows, asOf);
+  const sources = await (await getDb()).select().from(t.sheetSources);
+  const boards = buildSheetBoards(rows, sources, asOf);
   const goLives = [...L.goLives.within30.map((r) => [r, "30"] as const), ...L.goLives.within60.map((r) => [r, "60"] as const), ...L.goLives.within90.map((r) => [r, "90"] as const)];
 
   return (
@@ -23,7 +29,7 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Readiness dashboard</h1>
-          <p className="text-sm text-gray-600">As of {fmtDate(asOf)}. Clients in delivery, worst first.</p>
+          <p className="text-sm text-gray-600">As of {fmtDate(asOf)}. Each client&apos;s open and past-due work first, then the whole portfolio.</p>
         </div>
         <form action={weeklyRefresh}>
           <input type="hidden" name="back" value="/" />
@@ -31,11 +37,20 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
         </form>
       </div>
 
+      {rows.length === 0 && (
+        <Card title="No clients yet">
+          <p className="text-sm">Open <Link href="/settings/sheets">Sheets</Link>, add the client with &quot;Its tracking sheet only&quot;, add its sheet and press Sync now. Its open and past-due items then show here.</p>
+        </Card>
+      )}
+
+      {boards.map((b) => <SheetBoardCard key={b.row.snapshot.project.id} b={b} />)}
+
+      {rows.length > 0 && <h2 className="pt-2 text-lg font-bold">All clients</h2>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Stat label="Red" value={L.counts.red} tone="red" />
-        <Stat label="Yellow" value={L.counts.yellow} tone="yellow" />
-        <Stat label="Green" value={L.counts.green} tone="green" />
-        <Stat label="In pre-discovery" value={L.pipelineCount} />
+        <Stat label="Clients in delivery rated red" value={L.counts.red} tone="red" />
+        <Stat label="Clients in delivery rated yellow" value={L.counts.yellow} tone="yellow" />
+        <Stat label="Clients in delivery rated green" value={L.counts.green} tone="green" />
+        <Stat label="Deals in pre-discovery" value={L.pipelineCount} />
         <Stat label="Level 3 escalations" value={L.topEscalations.length} tone={L.topEscalations.length ? "red" : undefined} />
       </div>
 

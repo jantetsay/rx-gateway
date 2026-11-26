@@ -77,6 +77,8 @@ export interface Task {
   lastUpdateAt: string | null;
   decisionNeeded: string | null;
   source: "app" | "sheet";
+  /** For rows read from a sheet: source, tab and row key. */
+  sourceRef?: string | null;
 }
 
 export interface Dependency {
@@ -167,6 +169,8 @@ export interface Project {
   committedDate: string | null;
   pmId: string | null;
   updatedAt: string;
+  /** The template version the plan came from, or "sheet" when the work comes only from a tracking sheet. */
+  templateVersion?: string;
 }
 
 export interface WorkstreamOwner {

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { nextMonday, today, type ISODate } from "@/domain/calendar";
 import { stageMoveError, type EdiPartner } from "@/domain/edi";
 import { instantiate } from "@/domain/instantiate";
-import { CLIENT_ROLES } from "@/domain/template";
+import { CLIENT_ROLES, SHEET_PLAN } from "@/domain/template";
 import type {
   Color, GateKey, HandOverride, ProjectSnapshot, StageKey, Task, TaskStatus, WorkstreamKey,
 } from "@/domain/types";
@@ -74,6 +74,7 @@ export async function loadSnapshots(db: DB, projectIds?: string[]): Promise<Proj
       id: p.id, clientId: c.id, clientName: c.name, segment: c.segment, name: p.name, modules: p.modules, tier: p.tier,
       stage: p.stage as StageKey, archived: p.archived, contractSigned: p.contractSigned, targetWindowStart: p.targetWindowStart,
       targetWindowEnd: p.targetWindowEnd, notEarlierThan: p.notEarlierThan, committedDate: p.committedDate, pmId: p.pmId, updatedAt: p.updatedAt,
+      templateVersion: p.templateVersion,
     },
     tasks: byProject(tasks, p.id).map((x) => ({
       ...x, kind: x.kind as Task["kind"], stage: x.stage as StageKey, workstream: x.workstream as WorkstreamKey,
@@ -133,11 +134,15 @@ export interface NewProject {
   targetWindowEnd: ISODate | null;
   workstreams: WorkstreamKey[];
   contractSigned: ISODate | null;
+  /** True when the work comes from a tracking sheet: no template plan is laid out. */
+  fromSheet?: boolean;
 }
 
 export async function createProject(db: DB, input: NewProject, actorId: string | null): Promise<string> {
   const id = `prj-${randomUUID().slice(0, 8)}`;
-  const plan = instantiate(id, input.start, { workstreams: input.workstreams, newId });
+  const plan = input.fromSheet
+    ? { templateVersion: SHEET_PLAN, tasks: [], dependencies: [], gates: [] }
+    : instantiate(id, input.start, { workstreams: input.workstreams, newId });
   await db.transaction(async (tx) => {
     await tx.insert(t.projects).values({
       id, clientId: input.clientId, name: input.name, modules: input.modules, tier: input.tier, stage: input.stage,
@@ -146,6 +151,7 @@ export async function createProject(db: DB, input: NewProject, actorId: string |
     });
     const { WORKSTREAMS } = await import("@/domain/types");
     await tx.insert(t.projectWorkstreams).values(WORKSTREAMS.map((w) => ({ projectId: id, workstream: w, enabled: input.workstreams.includes(w), ownerId: null })));
+    if (input.fromSheet) return;
     await tx.insert(t.tasks).values(plan.tasks.map((x) => ({ ...x })));
     if (plan.dependencies.length) await tx.insert(t.dependencies).values(plan.dependencies);
     await tx.insert(t.gates).values(plan.gates.map(({ signers: _s, ...g }) => g));

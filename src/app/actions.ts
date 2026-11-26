@@ -131,6 +131,7 @@ export async function addClient(f: FormData) {
     await repo.createProject(db, {
       clientId, name, stage, start, modules: [], tier: null, pmId: a,
       targetWindowStart: null, targetWindowEnd: goLive, workstreams: [...WORKSTREAMS], contractSigned: start,
+      fromSheet: str(f, "plan") !== "template",
     }, a);
   });
 }

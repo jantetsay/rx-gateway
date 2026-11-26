@@ -63,7 +63,7 @@ export default async function SheetsSettings({ searchParams }: { searchParams: S
       </Card>
 
       <Card title="Add a client">
-        <p className="mb-2 text-xs text-gray-600">Creates a client record with the standard plan (stages, gates, work items), so a tracking sheet has somewhere to land.</p>
+        <p className="mb-2 text-xs text-gray-600">Creates a client record so a tracking sheet has somewhere to land. Pick where its work comes from: only its sheet (the dashboard then shows the sheet&apos;s items and nothing made up), or the standard plan of stages, gates and work items.</p>
         <form action={addClient} className="grid gap-3 text-sm sm:grid-cols-2">
           <input type="hidden" name="back" value={back} />
           <label className="grid gap-1">Client name<input name="name" required className="rounded border border-line px-2 py-1" /></label>
@@ -79,6 +79,12 @@ export default async function SheetsSettings({ searchParams }: { searchParams: S
           </label>
           <label className="grid gap-1">Start date<input type="date" name="start" className="rounded border border-line px-2 py-1" /></label>
           <label className="grid gap-1">Target go-live<input type="date" name="goLive" className="rounded border border-line px-2 py-1" /></label>
+          <label className="grid gap-1">Work comes from
+            <select name="plan" defaultValue="sheet" className="rounded border border-line px-2 py-1">
+              <option value="sheet">Its tracking sheet only</option>
+              <option value="template">The standard plan</option>
+            </select>
+          </label>
           <div className="self-end"><Submit>Add client</Submit></div>
         </form>
       </Card>

@@ -6,7 +6,7 @@ import { calendarDaysBetween, workingDaysBetween, type ISODate } from "./calenda
 import { evaluatePartner, partnerGate, type PartnerEval } from "./edi";
 import { RULES } from "./rules";
 import { schedule, type ScheduleResult } from "./schedule";
-import { GATE_BY_KEY, GO_LIVE_KEY, WORKSTREAM_LABEL } from "./template";
+import { GATE_BY_KEY, GO_LIVE_KEY, SHEET_PLAN, WORKSTREAM_LABEL } from "./template";
 import {
   GATES, WORKSTREAMS, worst,
   type Color, type Gate, type GateKey, type HandOverride, type ProjectSnapshot, type Rated, type Task, type WorkstreamKey,
@@ -166,13 +166,17 @@ export function evaluateProject(s: ProjectSnapshot, asOf: ISODate): ProjectEval 
   const slipDays = p.stage !== "pre_discovery" && reference && forecastGoLive ? Math.max(0, workingDaysBetween(reference.date, forecastGoLive)) : null;
 
   const lane = p.stage === "pre_discovery" ? "pre_discovery" : "delivery";
+  // A project run from its tracking sheet has no template plan: no critical path,
+  // gates or forecast. Its items are rated on their own dates and the project
+  // color comes from what is past due.
+  const sheetRun = p.templateVersion === SHEET_PLAN;
   // Pre-discovery is rated on G1 and G2 only; the rest of the plan is a sketch until signature.
   const rated = (t: Task) => t.kind !== "milestone" && (lane === "delivery" || t.gateKey === "G1" || t.gateKey === "G2");
 
   const tasks = new Map<string, TaskEval>();
   for (const t of inScope) {
     if (!rated(t)) continue;
-    const e = rateTask(t, sched, asOf);
+    const e = rateTask(t, sheetRun ? null : sched, asOf);
     const o = overrideFor(s, "task", t.id, asOf);
     if (o) e.reasons.push(`Hand change to ${o.color}: ${o.reason}`);
     tasks.set(t.id, e);
@@ -254,7 +258,19 @@ export function evaluateProject(s: ProjectSnapshot, asOf: ISODate): ProjectEval 
   const colors: Color[] = [];
   const reasons: string[] = [];
   const add = (c: Color, r: string) => { colors.push(c); reasons.push(r); };
-  if (lane === "pre_discovery") {
+  if (sheetRun) {
+    const open = [...tasks.values()].filter((e) => e.task.status !== "done");
+    const late = open.filter((e) => e.overdueDays > 0);
+    const veryLate = late.filter((e) => e.overdueDays > RULES.project.slipYellowMaxWorkingDays);
+    const lateList = (xs: TaskEval[]) => xs.sort((a, b) => b.overdueDays - a.overdueDays).slice(0, 3).map((e) => e.task.title).join("; ");
+    if (veryLate.length) add("red", `${veryLate.length} open item${veryLate.length > 1 ? "s" : ""} more than ${days(RULES.project.slipYellowMaxWorkingDays)} past due: ${lateList(veryLate)}`);
+    else if (late.length) add("yellow", `${late.length} open item${late.length > 1 ? "s" : ""} past due: ${lateList(late)}`);
+    const lateEdi = partners.filter((x) => x.partner.stage !== 9 && x.partner.nextStepDate && x.partner.nextStepDate < asOf);
+    if (lateEdi.length) add("yellow", `${lateEdi.length} EDI partner${lateEdi.length > 1 ? "s" : ""} past their next-step date: ${lateEdi.map((x) => x.partner.name).join(", ")}`);
+    const blocked = open.filter((e) => e.task.status === "blocked");
+    if (blocked.length) add("yellow", `${blocked.length} item${blocked.length > 1 ? "s" : ""} blocked`);
+    if (!colors.length) reasons.push(open.length ? "Nothing in the sheet is past due" : "No open items in the sheet");
+  } else if (lane === "pre_discovery") {
     for (const g of ratedGates) if (g.effective !== "green") add(g.effective, `${g.gate.key} ${g.name} is ${g.effective}`);
   } else {
     if (nextGate?.effective === "red") add("red", `Next gate ${nextGate.gate.key} ${nextGate.name} is red`);
@@ -279,7 +295,7 @@ export function evaluateProject(s: ProjectSnapshot, asOf: ISODate): ProjectEval 
   const exceptionsInForce = s.exceptions.filter((x) => !!x.approvedBy && x.expiresAt > asOf);
   if (exceptionsInForce.length) add("yellow", `Override in force: ${exceptionsInForce.map((x) => x.rule).join("; ")}`);
   const computedColor = worst(...colors);
-  if (computedColor === "green") reasons.push(lane === "pre_discovery" ? "G1 and G2 on track" : "Next gate green and no slip");
+  if (computedColor === "green" && !sheetRun) reasons.push(lane === "pre_discovery" ? "G1 and G2 on track" : "Next gate green and no slip");
   const override = overrideFor(s, "project", p.id, asOf);
 
   const updates = [p.updatedAt, ...s.tasks.map((t) => t.lastUpdateAt)].filter((x): x is string => !!x).map((x) => x.slice(0, 10)).sort();
