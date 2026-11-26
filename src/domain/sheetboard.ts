@@ -50,6 +50,8 @@ export interface SheetPartner {
   blocker: string | null;
   /** The status as the tracking sheet words it, when the partner comes from a sheet. */
   sheetStatus: string | null;
+  /** In this phase's scope: yes, no, or not decided. */
+  inScope: "yes" | "no" | "tbd";
   /** Transaction sets in the test matrix, as "850 out", with their test result and the sheet's own status words. */
   sets: { label: string; transaction: string; direction: "inbound" | "outbound"; testStatus: "passed" | "failed" | "not_run"; live: boolean; sheetStatus: string | null }[];
 }
@@ -100,7 +102,12 @@ export interface SheetBoard {
   total: number;
   byTab: TabSplit[];
   weeks: DueWeek[];
+  /** The partners the board counts: the in-scope ones when any partner is marked in scope, otherwise all. */
   partners: SheetPartner[];
+  /** Every partner, in scope or not, for the "show all" toggle. */
+  allPartners: SheetPartner[];
+  /** True when the board shows only partners marked in scope. */
+  scoped: boolean;
   /** One entry per work stream that has items, core streams always, in a fixed order. */
   byStream: StreamSplit[];
   heat: StreamHeat;
@@ -263,12 +270,15 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       id: p.id, name: p.name, nextStep: p.nextStep, nextStepDate: p.nextStepDate,
       daysLate: p.nextStepDate && p.nextStepDate < asOf ? workingDaysBetween(p.nextStepDate, asOf) : 0,
       owner: person(p.ownerId), type: p.type, method: p.method, stage: p.stage,
-      stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker, sheetStatus: p.sheetStatus ?? null,
+      stageLabel: EDI_STAGES[p.stage - 1] ?? `Stage ${p.stage}`, lastContact: p.lastContact, blocker: p.blocker, sheetStatus: p.sheetStatus ?? null, inScope: p.inPhaseOne,
       sets: p.tests.map((t) => ({
         label: `${t.transaction} ${t.direction === "inbound" ? "in" : "out"}`, transaction: t.transaction, direction: t.direction,
         testStatus: t.testStatus, live: t.prodStatus === "live", sheetStatus: t.sheetStatus ?? null,
       })),
     })).sort((a, b) => b.daysLate - a.daysLate || (a.nextStepDate ?? "9999").localeCompare(b.nextStepDate ?? "9999") || a.name.localeCompare(b.name));
+    const allPartners = partners;
+    const scoped = allPartners.some((p) => p.inScope === "yes");
+    const shownPartners = scoped ? allPartners.filter((p) => p.inScope === "yes") : allPartners;
 
     const split = new Map<string, TabSplit>();
     for (const t of tasks) {
@@ -310,12 +320,12 @@ export function buildSheetBoards(rows: PortfolioRow[], sources: SourceInfo[], as
       sources: srcs.map(({ label, lastSyncedAt, lastResult }) => ({ label, lastSyncedAt, lastResult })),
       counts: {
         open: open.length, pastDue: pastDue.length, dueSoon: dueSoon.length, noDate: items.filter((i) => !i.due).length,
-        done: tasks.length - open.length, partners: partners.length, partnersPastDue: partners.filter((p) => p.daysLate > 0).length,
+        done: tasks.length - open.length, partners: shownPartners.length, partnersPastDue: shownPartners.filter((p) => p.daysLate > 0).length,
       },
       open: [...items].sort((a, b) => b.daysLate - a.daysLate || (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.title.localeCompare(b.title)),
       pastDue, dueSoon,
       openByTab: [...tabs].map(([tab, x]) => ({ tab, ...x })).sort((a, b) => b.open - a.open),
-      partners,
+      partners: shownPartners, allPartners, scoped,
       noOwners: open.length > 0 && open.every((t) => !t.ownerId),
     });
   }

@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { nextMonday, today, type ISODate } from "@/domain/calendar";
 import { stageMoveError, type EdiPartner } from "@/domain/edi";
 import { instantiate } from "@/domain/instantiate";
+import { COLOR_KEYS, mergeColors, type StatusColors } from "@/domain/colors";
 import { CLIENT_ROLES, SHEET_PLAN } from "@/domain/template";
 import type {
   Color, GateKey, HandOverride, ProjectSnapshot, StageKey, Task, TaskStatus, WorkstreamKey,
@@ -415,4 +416,38 @@ export async function snapshotProjects(db: DB, projectIds: string[] | undefined,
 
 function pick<T extends object>(o: T, keys: string[]): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([k]) => keys.includes(k))) as Partial<T>;
+}
+
+// ---------- Settings ----------
+
+export async function getSetting<T = unknown>(db: DB, key: string): Promise<T | null> {
+  const [row] = await db.select().from(t.settings).where(eq(t.settings.key, key));
+  return (row?.value as T) ?? null;
+}
+
+async function putSetting(db: DB, key: string, value: unknown) {
+  const at = nowIso();
+  await db.insert(t.settings).values({ key, value, updatedAt: at }).onConflictDoUpdate({ target: t.settings.key, set: { value, updatedAt: at } });
+}
+
+/** The status colors in use: saved picks over the defaults. */
+export async function statusColors(db: DB): Promise<StatusColors> {
+  return mergeColors((await getSetting<Record<string, unknown>>(db, "statusColors")) ?? {});
+}
+
+/** Saves new status colors and logs one change per color that moved. Returns how many changed. */
+export async function saveStatusColors(db: DB, next: StatusColors, actorId: string | null): Promise<number> {
+  const before = await statusColors(db);
+  const changed = COLOR_KEYS.filter((k) => before[k] !== next[k]);
+  if (!changed.length) return 0;
+  await putSetting(db, "statusColors", next);
+  for (const k of changed) {
+    await audit(db, actorId, "update", "setting", `statusColors.${k}`, { before: { value: before[k] }, after: { value: next[k] } });
+  }
+  return changed.length;
+}
+
+/** Setting changes, newest first: colors, and the sheet sources and their mappings. */
+export async function settingsLog(db: DB, limit = 60) {
+  return db.select().from(t.auditLog).where(inArray(t.auditLog.entity, ["setting", "sheet_source"])).orderBy(desc(t.auditLog.id)).limit(limit);
 }

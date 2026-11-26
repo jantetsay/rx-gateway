@@ -70,14 +70,15 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
           const ref = prefix + p.ref;
           seenPartners.add(ref);
           const [existing] = await db.select().from(t.ediPartners).where(and(eq(t.ediPartners.projectId, src.projectId), eq(t.ediPartners.sourceRef, ref)));
-          const fields = { nextStep: p.nextStep, nextStepDate: p.nextStepDate, sheetStatus: p.status, ...(p.lastContact ? { lastContact: p.lastContact } : {}) };
+          // A mapped scope column decides whether the partner is in this phase; without one the app's own value stays.
+          const fields = { nextStep: p.nextStep, nextStepDate: p.nextStepDate, sheetStatus: p.status, ...(p.lastContact ? { lastContact: p.lastContact } : {}), ...(p.inScope ? { inPhaseOne: p.inScope } : {}) };
           if (existing) {
             // The sheet fills a method the app has none for; a method set in the app stays.
             await db.update(t.ediPartners).set({ ...fields, ...(p.method && !existing.method ? { method: p.method } : {}) }).where(eq(t.ediPartners.id, existing.id));
             result.partners.updated++;
           } else {
             await db.insert(t.ediPartners).values({
-              id: newId(), projectId: src.projectId, name: p.name, type: p.type ?? "customer", method: p.method, inPhaseOne: "tbd", stage: p.defaultStage,
+              id: newId(), projectId: src.projectId, name: p.name, type: p.type ?? "customer", method: p.method, inPhaseOne: p.inScope ?? "tbd", stage: p.defaultStage,
               source: "sheet", sourceRef: ref, ...fields,
             });
             result.partners.added++;

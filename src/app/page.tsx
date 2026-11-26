@@ -39,7 +39,7 @@ export default async function Dashboard({ searchParams }: { searchParams: SP }) 
 
       {rows.length === 0 && (
         <Card title="No clients yet">
-          <p className="text-sm">Open <Link href="/settings/sheets">Sheets</Link>, add the client with &quot;Its tracking sheet only&quot;, add its sheet and press Sync now. Its open and past-due items then show here.</p>
+          <p className="text-sm">Open <Link href="/settings#sheets">Settings</Link>, add the client with &quot;Its tracking sheet only&quot;, add its sheet and press Sync now. Its open and past-due items then show here.</p>
         </Card>
       )}
 

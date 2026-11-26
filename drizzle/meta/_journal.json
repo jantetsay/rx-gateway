@@ -43,6 +43,13 @@
       "when": 1795722343775,
       "tag": "0005_task_card",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795724499807,
+      "tag": "0006_settings",
+      "breakpoints": true
     }
   ]
 }

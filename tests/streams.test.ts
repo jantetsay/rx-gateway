@@ -53,7 +53,7 @@ describe("transaction sets from a register", () => {
 describe("the partner-by-set heat map", () => {
   const partner = (id: string, sheetStatus: string, sets: SheetPartner["sets"], daysLate = 0): SheetPartner => ({
     id, name: id, nextStep: null, nextStepDate: null, daysLate, owner: null, type: "supplier", method: null, stage: 1,
-    stageLabel: "Discovery", lastContact: null, blocker: null, sheetStatus, sets,
+    stageLabel: "Discovery", lastContact: null, blocker: null, sheetStatus, inScope: "tbd", sets,
   });
   const set = (transaction: string, direction: "inbound" | "outbound", sheetStatus = "Not started", testStatus: "passed" | "failed" | "not_run" = "not_run", live = false) =>
     ({ label: `${transaction} ${direction === "inbound" ? "in" : "out"}`, transaction, direction, testStatus, live, sheetStatus });

@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { getDb } from "@/db/client";
+import * as repo from "@/db/repo";
+import { colorCss, DEFAULT_COLORS, type StatusColors } from "@/domain/colors";
 
 export const metadata: Metadata = {
   title: "RX Gateway",
@@ -13,12 +16,26 @@ const NAV = [
   ["/partners", "Partner profiles"],
   ["/alerts", "Alerts"],
   ["/audit", "Audit log"],
-  ["/settings/sheets", "Sheets"],
+  ["/settings", "Settings"],
 ] as const;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+// Saved status colors apply on every page, so the layout reads them per request.
+export const dynamic = "force-dynamic";
+
+async function savedColors(): Promise<StatusColors> {
+  try {
+    return await repo.statusColors(await getDb());
+  } catch {
+    return DEFAULT_COLORS;
+  }
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <style>{colorCss(await savedColors())}</style>
+      </head>
       <body className="min-h-screen antialiased">
         <header className="bg-navy text-white">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">

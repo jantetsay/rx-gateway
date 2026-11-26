@@ -55,6 +55,8 @@ const partnerTab = z.object({
     type: z.string().optional(),
     /** AS2, VAN or SFTP; sets the method when the app has none. */
     method: z.string().optional(),
+    /** Marks the partners in this phase's scope ("Yes"). Blank means not decided; "No" means out. The dashboard shows in-scope partners first. */
+    inScope: z.string().optional(),
   }),
   /** Row states that mean the step is finished, so it isn't the partner's next step. */
   doneStates: z.array(z.string()).default(["done", "complete", "completed", "closed"]),
@@ -150,6 +152,16 @@ export interface SheetPartner {
   status: string | null;
   type: "customer" | "supplier" | null;
   method: "AS2" | "VAN" | "SFTP" | null;
+  /** From the scope column: null when the mapping has no scope column. */
+  inScope: "yes" | "no" | "tbd" | null;
+}
+
+/** Reads a scope cell: yes, y, x, true or in mean in scope; no, n, false or out mean out; anything else is not decided. */
+export function scopeOf(v: string): "yes" | "no" | "tbd" {
+  const t = v.trim().toLowerCase();
+  if (/^(yes|y|x|true|in|in scope)$/.test(t)) return "yes";
+  if (/^(no|n|false|out|out of scope)$/.test(t)) return "no";
+  return "tbd";
 }
 
 /** Accepts 2026-11-26, 11/26/2026 and 26 Nov 2026. Anything else is no date. */
@@ -248,7 +260,7 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
     // A row with a sentence in the name column and nothing else filled is a note, not a partner.
     const others = [c.nextStep, c.nextStepDate, c.status, c.lastContact].some((i) => i !== undefined && cell(r, i) !== "");
     if (!others && name.split(/\s+/).length > 5) continue;
-    const p = byName.get(name) ?? { ref: `${m.tab}!${name}`, name, nextStep: null, nextStepDate: null, lastContact: null, defaultStage: m.defaultStage, status: null, type: null, method: null };
+    const p = byName.get(name) ?? { ref: `${m.tab}!${name}`, name, nextStep: null, nextStepDate: null, lastContact: null, defaultStage: m.defaultStage, status: null, type: null, method: null, inScope: null };
     const finished = done.has(cell(r, c.status).toLowerCase());
     const due = parseDate(cell(r, c.nextStepDate));
     // The partner's next step is its earliest open step.
@@ -261,6 +273,11 @@ export function mapPartnerRows(m: PartnerTabMapping, rows: string[][]): SheetPar
     if (type.startsWith("cust")) p.type = "customer"; else if (type.startsWith("supp") || type.startsWith("vend")) p.type = "supplier";
     const method = cell(r, c.method).toUpperCase().match(/^(AS2|VAN|SFTP)\b/);
     if (method) p.method = method[1] as "AS2" | "VAN" | "SFTP";
+    if (c.inScope !== undefined && c.inScope >= 0) {
+      // Any row of the partner marked in scope puts it in scope.
+      const sc = scopeOf(cell(r, c.inScope));
+      p.inScope = p.inScope === "yes" || sc === "yes" ? "yes" : p.inScope === "no" || sc === "no" ? "no" : "tbd";
+    }
     const contact = parseDate(cell(r, c.lastContact));
     if (contact && (!p.lastContact || contact > p.lastContact)) p.lastContact = contact;
     byName.set(name, p);

@@ -302,3 +302,10 @@ export const auditLog = pgTable("audit_log", {
   after: jsonb("after"),
   note: text("note"),
 });
+
+/** App settings, one row per setting (for example "statusColors"). Every change is also written to the audit log. */
+export const settings = pgTable("settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

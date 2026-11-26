@@ -82,6 +82,20 @@ describe("sheet mapping", () => {
     expect(ps[1]).toMatchObject({ type: "customer", method: "SFTP" });
     expect(ps[2]).toMatchObject({ status: "Out of Scope", method: null });
   });
+  it("reads a scope column: Yes is in scope, blank is not decided, no column leaves it unset", () => {
+    const tabMap = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status", inScope: "In scope" } }] }).tabs[0];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [
+      ["Partner", "Status", "In scope"],
+      ["Prasco", "Testing", "Yes"],
+      ["Carlsbad", "Discovery", ""],
+      ["Ortho", "Discovery", "No"],
+    ]);
+    expect(ps.map((p) => p.inScope)).toEqual(["yes", "tbd", "no"]);
+    const plain = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status" } }] }).tabs[0];
+    if (plain.kind !== "edi_partners") throw new Error();
+    expect(mapPartnerRows(plain, [["Partner", "Status"], ["Prasco", "Testing"]])[0].inScope).toBeNull();
+  });
   it("names the missing column when a mapping doesn't match the sheet", () => {
     const tabMap = mapping.tabs[0];
     if (tabMap.kind !== "tasks") throw new Error();

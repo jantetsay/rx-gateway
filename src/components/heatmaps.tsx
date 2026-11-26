@@ -10,7 +10,9 @@ import { SET_LEVELS, type SetGrid } from "@/domain/setlevels";
 /** Sequential blue (counts): the light end may recede toward the page. */
 const SEQ = ["#b6d5f8", "#84b9f3", "#338ced", "#2370cd", "#0f4a96"];
 /** Ordinal blue (levels): the light end still clears 2:1 on white. Validated with the dataviz checks. */
-export const ORD = ["#84b9f3", "#519ced", "#257de0", "#1b64be", "#0f4a96"];
+// Progress levels come from Settings through CSS variables (defaults in globals.css).
+export const ORD = [0, 1, 2, 3, 4].map((i) => `var(--color-lv-${i})`);
+const ORD_INK = [0, 1, 2, 3, 4].map((i) => `var(--color-lv-ink-${i})`);
 const inkOn = (i: number) => (i >= 2 ? "#ffffff" : "#0e2a52");
 
 function seqStep(v: number, max: number) {
@@ -122,7 +124,7 @@ export function SetHeatMap({ grid, hrefFor }: { grid: SetGrid; hrefFor: (partner
                       <td key={col} className="h-7 p-0">
                         <Link href={hrefFor(p.id)} title={label} aria-label={label}
                           className="flex h-7 items-center justify-center rounded text-[11px] font-semibold no-underline transition hover:ring-2 hover:ring-navy/50"
-                          style={{ background: ORD[c.level], color: inkOn(c.level), boxShadow: late ? "inset 0 0 0 2px var(--color-st-critical)" : undefined }}>
+                          style={{ background: ORD[c.level], color: ORD_INK[c.level], boxShadow: late ? "inset 0 0 0 2px var(--color-st-critical)" : undefined }}>
                           {c.failed ? "Failed" : c.level === 4 ? "Live" : ""}
                         </Link>
                       </td>

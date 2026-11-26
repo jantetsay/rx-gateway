@@ -23,7 +23,12 @@ export default async function EdiPage({ params, searchParams }: { params: Promis
   const back = `/projects/${id}/edi`;
   const people = [...s.people.values()].sort((a, b) => a.name.localeCompare(b.name));
   const name = (pid: string | null) => (pid ? s.people.get(pid)?.name ?? "Unknown" : null);
-  const byStage = EDI_STAGES.map((label, i) => ({ stage: i + 1, label, count: s.ediPartners.filter((p) => p.stage === i + 1).length }));
+  // When the sheet marks partners in scope, show those first; "show all" brings back the rest.
+  const scoped = e.partners.some((pe) => pe.partner.inPhaseOne === "yes");
+  const showAll = !scoped || one(sp.scope) === "all";
+  const shown = showAll ? e.partners : e.partners.filter((pe) => pe.partner.inPhaseOne === "yes");
+  const shownIds = new Set(shown.map((pe) => pe.partner.id));
+  const byStage = EDI_STAGES.map((label, i) => ({ stage: i + 1, label, count: s.ediPartners.filter((p) => p.stage === i + 1 && shownIds.has(p.id)).length }));
 
   return (
     <div className="space-y-6">
@@ -43,7 +48,15 @@ export default async function EdiPage({ params, searchParams }: { params: Promis
         ))}
       </div>
 
-      {e.partners.length === 0 ? <Empty>No EDI partners on this client.</Empty> : e.partners.map((pe) => {
+      {scoped && (
+        <p className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+          {showAll
+            ? <>Showing all {e.partners.length} partners. <Link href={back} className="font-semibold">Show only the {e.partners.filter((pe) => pe.partner.inPhaseOne === "yes").length} in scope</Link></>
+            : <>Showing the {shown.length} partners marked in scope, out of {e.partners.length}. <Link href={`${back}?scope=all`} className="font-semibold">Show all {e.partners.length}</Link></>}
+        </p>
+      )}
+
+      {shown.length === 0 ? <Empty>No EDI partners on this client.</Empty> : shown.map((pe) => {
         const p = pe.partner;
         const gate = partnerGate(p);
         return (

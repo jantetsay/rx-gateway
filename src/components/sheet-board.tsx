@@ -128,7 +128,7 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
             </div>
             <p className="mt-1 text-sm text-white/80">
               {STAGE_LABEL[p.stage]} · target go-live {fmtDate(p.committedDate ?? p.targetWindowEnd)} · sheet last read {fmtTime(read)}
-              {!read && <> · <Link href="/settings/sheets" className="text-gold">press Sync now on Sheets</Link></>}
+              {!read && <> · <Link href="/settings#sheets" className="text-gold">press Sync now on Settings</Link></>}
             </p>
           </div>
           <div className="min-w-56">
@@ -145,7 +145,7 @@ export function SheetBoardCard({ b }: { b: SheetBoard }) {
         <Kpi label="Past due" value={c.pastDue} sub={c.open ? `${Math.round((c.pastDue / c.open) * 100)}% of open work` : undefined} icon={I.alert} tone={c.pastDue ? "critical" : "good"} href={`/projects/${p.id}/board?view=pastdue`} />
         <Kpi label="Due in 2 weeks" value={c.dueSoon} sub="next 14 days" icon={I.clock} tone={c.dueSoon ? "warning" : "neutral"} href={`/projects/${p.id}/board?view=soon`} />
         <Kpi label="No due date" value={c.noDate} sub="open, undated" icon={I.nodate} tone="neutral" href={`/projects/${p.id}/board?view=nodate`} />
-        <Kpi label="EDI partners late" value={`${c.partnersPastDue}/${c.partners}`} sub="past their next step" icon={I.link} tone={c.partnersPastDue ? "critical" : "good"} href={`/projects/${p.id}/board?view=partners`} />
+        <Kpi label="EDI partners late" value={`${c.partnersPastDue}/${c.partners}`} sub={b.scoped ? "in scope, past their next step" : "past their next step"} icon={I.link} tone={c.partnersPastDue ? "critical" : "good"} href={`/projects/${p.id}/board?view=partners`} />
       </div>
 
       <div className="rounded-xl border border-line bg-white px-5 py-3 shadow-sm">

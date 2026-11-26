@@ -70,13 +70,14 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: "ba
   );
 }
 
-function PartnerView({ projectId, partners, filter, only }: { projectId: string; partners: SheetPartner[]; filter: PFilter; only: string | null }) {
+function PartnerView({ projectId, partners, filter, only, scope }: { projectId: string; partners: SheetPartner[]; filter: PFilter; only: string | null; scope: { scoped: boolean; all: boolean; inScope: number; total: number } }) {
   const late = partners.filter((x) => x.daysLate > 0);
   const onTime = partners.filter((x) => x.daysLate === 0 && x.nextStepDate);
   const undated = partners.filter((x) => !x.nextStepDate);
   const picked = only ? partners.find((x) => x.id === only) ?? null : null;
   const shown = picked ? [picked] : partners.filter((x) => filter === "all" || (filter === "late" ? x.daysLate > 0 : x.type === filter));
-  const base = `/projects/${projectId}/board?view=partners`;
+  const root = `/projects/${projectId}/board?view=partners`;
+  const base = scope.all ? `${root}&scope=all` : root;
   const grid = setGrid(partners.filter((x) => filter === "all" || (filter === "late" ? x.daysLate > 0 : x.type === filter)));
   return (
     <div className="space-y-4">
@@ -86,6 +87,14 @@ function PartnerView({ projectId, partners, filter, only }: { projectId: string;
         <Stat label="On time" value={onTime.length} tone="ok" />
         <Stat label="No next-step date" value={undated.length} />
       </div>
+
+      {scope.scoped && (
+        <p className="rounded-lg border border-line bg-white px-3 py-2 text-sm">
+          {scope.all
+            ? <>Showing all {scope.total} partners on the sheet. <Link href={`${root}${filter !== "all" ? `&filter=${filter}` : ""}`} className="font-semibold">Show only the {scope.inScope} in scope</Link></>
+            : <>Showing the {scope.inScope} partners marked in scope on the sheet, out of {scope.total}. <Link href={`${root}&scope=all${filter !== "all" ? `&filter=${filter}` : ""}`} className="font-semibold">Show all {scope.total}</Link></>}
+        </p>
+      )}
 
       <nav className="flex flex-wrap gap-2 text-xs" aria-label="Filter partners">
         {(Object.keys(PFILTERS) as PFilter[]).map((k) => {
@@ -363,6 +372,7 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
   const stream: StreamKey | null = isStream(rawS) ? rawS : null;
   const week = one(sp.week) ?? null;
   const only = one(sp.partner) ?? null;
+  const showAll = one(sp.scope) === "all";
   const client = row.snapshot.project.clientName;
 
   const lists: Record<Exclude<View, "partners">, SheetItem[]> | null = b ? {
@@ -371,7 +381,7 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
     soon: b.dueSoon,
     nodate: b.open.filter((i) => !i.due),
   } : null;
-  const count = (v: View) => (!b ? 0 : v === "partners" ? b.partners.length : lists![v].length);
+  const count = (v: View) => (!b ? 0 : v === "partners" ? (showAll ? b.allPartners : b.partners).length : lists![v].length);
 
   if (list) {
     return (
@@ -406,8 +416,9 @@ export default async function BoardDetail({ params, searchParams }: { params: Pr
         })}
       </nav>
 
-      {!b ? <p className="text-sm text-gray-500">This client has no tracking sheet yet. Add one on <Link href="/settings/sheets">Sheets</Link>.</p>
-        : view === "partners" ? <PartnerView projectId={id} partners={b.partners} filter={filter} only={only} />
+      {!b ? <p className="text-sm text-gray-500">This client has no tracking sheet yet. Add one on <Link href="/settings#sheets">Settings</Link>.</p>
+        : view === "partners" ? <PartnerView projectId={id} partners={showAll ? b.allPartners : b.partners} filter={filter} only={only}
+            scope={{ scoped: b.scoped, all: showAll, inScope: b.partners.length, total: b.allPartners.length }} />
         : stream ? <StreamList projectId={id} view={view} items={lists![view]} stream={stream} week={week} board={b} />
         : <ItemView projectId={id} view={view} items={lists![view]} stream={stream} week={week} board={b} />}
     </div>

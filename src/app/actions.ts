@@ -14,6 +14,7 @@ import * as t from "@/db/schema";
 import { mappingSchema } from "@/sheets/mapping";
 import { syncSource } from "@/sheets/sync";
 import { today } from "@/domain/calendar";
+import { checkColors, COLOR_DEFS, DEFAULT_COLORS, normalizeHex, type StatusColors } from "@/domain/colors";
 import { STAGES, WORKSTREAMS, type Color, type HandOverride, type StageKey, type TaskStatus } from "@/domain/types";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
@@ -32,13 +33,15 @@ function back(f: FormData, msg: { ok?: string; error?: string }): never {
 async function run(f: FormData, ok: string, fn: (db: Awaited<ReturnType<typeof getDb>>, actor: string | null) => Promise<unknown>): Promise<never> {
   const db = await getDb();
   const actor = (await repo.actingUser(db))?.id ?? null;
+  let said: unknown;
   try {
-    await fn(db, actor);
+    said = await fn(db, actor);
   } catch (e) {
     back(f, { error: e instanceof Error ? e.message : "Something went wrong" });
   }
   revalidatePath("/", "layout");
-  back(f, { ok });
+  // An action may return its own message, for example how many settings changed.
+  back(f, { ok: typeof said === "string" && said ? said : ok });
 }
 
 function needActor(actor: string | null): string {
@@ -181,4 +184,35 @@ function sheetId(v: string): string | null {
   const m = v.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
   if (m) return m[1];
   return /^[A-Za-z0-9_-]{20,}$/.test(v) ? v : null;
+}
+
+/** Saves the status colors picked on Settings. A pick that fails a check is still saved, with a warning. */
+export async function saveColors(f: FormData) {
+  return run(f, "No colors changed", async (db, a) => {
+    const now = await repo.statusColors(db);
+    const next = { ...now } as StatusColors;
+    for (const d of COLOR_DEFS) {
+      const raw = str(f, `c_${d.key}`);
+      if (!raw) continue;
+      const v = normalizeHex(raw);
+      if (!v) throw new Error(`${d.label}: "${raw}" isn't a color. Use a hex value like #257de0.`);
+      next[d.key] = v;
+    }
+    const n = await repo.saveStatusColors(db, next, a);
+    if (!n) return "No colors changed";
+    const fails = checkColors(next).filter((x) => x.level === "fail").length;
+    return `Saved ${n} color${n === 1 ? "" : "s"}.${fails ? ` ${fails} check${fails === 1 ? "" : "s"} failed: see the notes under the colors.` : ""}`;
+  });
+}
+
+/** Puts one color, or all of them, back to the default. */
+export async function resetColors(f: FormData) {
+  return run(f, "Already the default", async (db, a) => {
+    const key = str(f, "key");
+    if (key && !(key in DEFAULT_COLORS)) throw new Error("That isn't one of the status colors.");
+    const now = await repo.statusColors(db);
+    const next = key ? { ...now, [key]: DEFAULT_COLORS[key as keyof StatusColors] } : { ...DEFAULT_COLORS };
+    const n = await repo.saveStatusColors(db, next as StatusColors, a);
+    return n ? `Reset ${n} color${n === 1 ? "" : "s"} to the default.` : "Already the default";
+  });
 }
