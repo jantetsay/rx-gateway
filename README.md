@@ -31,7 +31,7 @@ The sample clients are all invented and marked "(sample)". Never load real clien
 | Partner profiles | One checked profile per trading partner, reused across clients. No certificates or passwords. |
 | Alerts | One alert per item per day, keeping only the most urgent reason. |
 | Audit log | Every change, who made it and when. |
-| Sheets | Connection status, sheet sources, Sync now, add a sheet. |
+| Sheets | Connection status, sheet sources, Sync now, add a client, add a sheet. |
 
 ## Where the rules live
 
@@ -60,9 +60,13 @@ To connect, the repository owner needs to:
 1. Create a Google Cloud service account and turn on the Google Sheets API for its project.
 2. Make a key for it and put it in `.env.local` as `GOOGLE_SERVICE_ACCOUNT_JSON` (the whole JSON on one line), or point `GOOGLE_APPLICATION_CREDENTIALS` at the key file. See `.env.example`.
 3. Share each tracking sheet with the service account's email as Viewer. Some Google Workspace organizations block sharing outside the domain; an admin may need to allow it.
-4. In the app, open Sheets, add the sheet with a mapping, and press Sync now.
+4. In the app, open Sheets. If the client isn't in the app yet, add it under "Add a client". Then add the sheet with a mapping and press Sync now.
 
 `sheets.config.example.json` shows a mapping. Mappings hold tab and column names only. Keep any real mapping out of git (`sheets.config.json` is ignored).
+
+Keep the key file outside the repository folder (for example in `~/.secrets/`) and point `GOOGLE_APPLICATION_CREDENTIALS` at its full path. Restart `npm run dev` after changing `.env.local`.
+
+Rows are matched to records by the key column. A row whose key is only a dash is matched by its title, and a key the tab repeats (several rows coded the same) is joined with the row's title, so each row stays its own item.
 
 ## Moving it into the portal later
 

@@ -120,10 +120,25 @@ export function mapTaskRows(m: TaskTabMapping, rows: string[][]): SheetTask[] {
   const c = Object.fromEntries(Object.entries(m.columns).map(([k, v]) => [k, column(header, v, m.tab)])) as Record<keyof TaskTabMapping["columns"], number>;
   const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "").trim() : "");
   const out: SheetTask[] = [];
+  // A blank key marks a heading row, which is skipped. A key that is only a
+  // dash means "no ID yet", so the row is keyed by its title. A key the tab
+  // repeats (several rows coded "EDI", say) is joined with the row's title, so
+  // each row stays its own item and keeps its key when rows are reordered.
+  const isDash = (k: string) => /^[-\u2013\u2014]+$/.test(k);
+  const counts = new Map<string, number>();
   for (const r of body) {
-    const key = cell(r, c.key);
+    const k = cell(r, c.key);
+    if (k && cell(r, c.title) && !isDash(k)) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const used = new Map<string, number>();
+  for (const r of body) {
     const title = cell(r, c.title);
-    if (!key || !title) continue; // section headings and blank rows
+    const raw = cell(r, c.key);
+    if (!raw || !title) continue; // section headings and blank rows
+    const base = isDash(raw) ? title : (counts.get(raw) ?? 0) > 1 ? `${raw} ${title}` : raw;
+    const n = (used.get(base) ?? 0) + 1;
+    used.set(base, n);
+    const key = n === 1 ? base : `${base}#${n}`;
     const completedAt = parseDate(cell(r, c.completed));
     let status = c.status >= 0 ? guessStatus(cell(r, c.status), m.statusMap) : completedAt ? "done" : "not_started";
     if (completedAt && status !== "done" && c.status < 0) status = "done";

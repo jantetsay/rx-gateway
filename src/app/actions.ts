@@ -12,7 +12,8 @@ import * as repo from "@/db/repo";
 import * as t from "@/db/schema";
 import { mappingSchema } from "@/sheets/mapping";
 import { syncSource } from "@/sheets/sync";
-import type { Color, HandOverride, TaskStatus } from "@/domain/types";
+import { today } from "@/domain/calendar";
+import { STAGES, WORKSTREAMS, type Color, type HandOverride, type StageKey, type TaskStatus } from "@/domain/types";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const opt = (f: FormData, k: string) => str(f, k) || null;
@@ -115,6 +116,23 @@ export async function setTest(f: FormData) {
 
 export async function resolveGap(f: FormData) {
   return run(f, "Gap resolved", (db, a) => repo.resolveGap(db, str(f, "gapId"), a));
+}
+
+export async function addClient(f: FormData) {
+  return run(f, "Client added. You can attach a sheet to it now.", async (db, a) => {
+    const name = str(f, "name");
+    if (!name) throw new Error("Give the client a name");
+    const stage = (STAGES as readonly string[]).includes(str(f, "stage")) ? (str(f, "stage") as StageKey) : "onboarding";
+    const start = str(f, "start") || today();
+    const goLive = opt(f, "goLive");
+    const clientId = `cl-${randomUUID().slice(0, 8)}`;
+    await db.insert(t.clients).values({ id: clientId, name, segment: str(f, "segment") || "Not set", ownerId: a });
+    await repo.audit(db, a, "create", "client", clientId, { after: { name } });
+    await repo.createProject(db, {
+      clientId, name, stage, start, modules: [], tier: null, pmId: a,
+      targetWindowStart: null, targetWindowEnd: goLive, workstreams: [...WORKSTREAMS], contractSigned: start,
+    }, a);
+  });
 }
 
 export async function addSheetSource(f: FormData) {

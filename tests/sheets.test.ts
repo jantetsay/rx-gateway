@@ -42,6 +42,20 @@ describe("sheet mapping", () => {
     expect(rows[1]).toMatchObject({ status: "done", completedAt: "2026-10-14" });
     expect(rows[2].dueDate).toBe("2026-11-30");
   });
+  it("keeps rows with a repeated or dash key as separate items", () => {
+    const tabMap = mapping.tabs[0];
+    if (tabMap.kind !== "tasks") throw new Error();
+    const rows = mapTaskRows(tabMap, [
+      taskRows[0],
+      ["EDI", "Partner A - Orders In", "OPEN", "", "", "", ""],
+      ["EDI", "Partner B - Orders In", "OPEN", "", "", "", ""],
+      ["\u2014", "Storefront domain move", "OPEN", "", "", "", ""],
+      ["X09", "Only once", "OPEN", "", "", "", ""],
+    ]);
+    expect(rows.map((r) => r.ref)).toEqual([
+      "Delivery!EDI Partner A - Orders In", "Delivery!EDI Partner B - Orders In", "Delivery!Storefront domain move", "Delivery!X09",
+    ]);
+  });
   it("rolls partner rows up to one partner with its earliest open step", () => {
     const tabMap = mapping.tabs[1];
     if (tabMap.kind !== "edi_partners") throw new Error();

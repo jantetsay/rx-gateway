@@ -2,12 +2,16 @@ import { asc } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import * as t from "@/db/schema";
 import { credentialStatus } from "@/sheets/google";
-import { addSheetSource, syncNow } from "@/app/actions";
+import { addClient, addSheetSource, syncNow } from "@/app/actions";
+import { STAGE_LABEL } from "@/domain/template";
+import { STAGES } from "@/domain/types";
 import { Card, Empty, fmtDate } from "@/components/ui";
 import { Flash, one, type SP } from "@/components/flash";
 import { Submit } from "@/components/submit";
 
 export const dynamic = "force-dynamic";
+
+const SEGMENTS = ["Wholesaler and distributor", "Manufacturer", "3PL provider", "Micro-distributor", "Government"];
 
 export default async function SheetsSettings({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
@@ -56,6 +60,27 @@ export default async function SheetsSettings({ searchParams }: { searchParams: S
             ))}
           </ul>
         )}
+      </Card>
+
+      <Card title="Add a client">
+        <p className="mb-2 text-xs text-gray-600">Creates a client record with the standard plan (stages, gates, work items), so a tracking sheet has somewhere to land.</p>
+        <form action={addClient} className="grid gap-3 text-sm sm:grid-cols-2">
+          <input type="hidden" name="back" value={back} />
+          <label className="grid gap-1">Client name<input name="name" required className="rounded border border-line px-2 py-1" /></label>
+          <label className="grid gap-1">Segment
+            <select name="segment" className="rounded border border-line px-2 py-1">
+              {SEGMENTS.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1">Current stage
+            <select name="stage" defaultValue="onboarding" className="rounded border border-line px-2 py-1">
+              {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1">Start date<input type="date" name="start" className="rounded border border-line px-2 py-1" /></label>
+          <label className="grid gap-1">Target go-live<input type="date" name="goLive" className="rounded border border-line px-2 py-1" /></label>
+          <div className="self-end"><Submit>Add client</Submit></div>
+        </form>
       </Card>
 
       <Card title="Add a sheet">
