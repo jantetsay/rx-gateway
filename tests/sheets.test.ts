@@ -1,0 +1,104 @@
+import { describe, expect, it } from "vitest";
+import { mapPartnerRows, mappingSchema, mapTaskRows, parseDate } from "@/sheets/mapping";
+
+// Made-up rows in the shape of a typical tracking sheet. No real client data.
+const taskRows = [
+  ["Code", "Task", "State", "Due", "Days late", "Completed", "Last touched"],
+  ["X01", "Load template signed off", "OVERDUE", "2026-11-02", "10", "-", "2026-10-20"],
+  ["X02", "Users and roles matrix", "COMPLETE", "2026-10-15", "", "2026-10-14", "2026-10-14"],
+  ["", "Section heading", "", "", "", "", ""],
+  ["X03", "Price list profile", "OPEN", "11/30/2026", "", "", ""],
+];
+
+const partnerRows = [
+  ["Partner", "Task", "Due", "Days late", "State"],
+  ["Partner A", "Orders In", "2026-11-15", "8", "OVERDUE"],
+  ["Partner A", "Invoices Out", "2026-11-10", "13", "DONE"],
+  ["Partner A", "Acks Out", "2026-11-20", "3", "OVERDUE"],
+  ["Partner B", "Orders In", "2026-12-01", "", "OPEN"],
+];
+
+const mapping = mappingSchema.parse({
+  tabs: [
+    { kind: "tasks", tab: "Delivery", defaults: { workstream: "env_config", stage: "validate_go_live", gate: "G6" },
+      columns: { key: "Code", title: "Task", status: "State", due: "Due", completed: "Completed", lastTouched: "Last touched" } },
+    { kind: "edi_partners", tab: "Partners", columns: { name: "Partner", nextStep: "Task", nextStepDate: "Due", status: "State" } },
+  ],
+});
+
+describe("sheet mapping", () => {
+  it("reads dates in the usual forms", () => {
+    expect(parseDate("2026-11-26")).toBe("2026-11-26");
+    expect(parseDate("11/26/2026")).toBe("2026-11-26");
+    expect(parseDate("26 Nov 2026")).toBe("2026-11-26");
+    expect(parseDate("-")).toBeNull();
+  });
+  it("maps task rows and skips blank and heading rows", () => {
+    const tabMap = mapping.tabs[0];
+    if (tabMap.kind !== "tasks") throw new Error();
+    const rows = mapTaskRows(tabMap, taskRows);
+    expect(rows.map((r) => r.ref)).toEqual(["Delivery!X01", "Delivery!X02", "Delivery!X03"]);
+    expect(rows[0]).toMatchObject({ status: "in_progress", dueDate: "2026-11-02", completedAt: null, gateKey: "G6" });
+    expect(rows[1]).toMatchObject({ status: "done", completedAt: "2026-10-14" });
+    expect(rows[2].dueDate).toBe("2026-11-30");
+  });
+  it("keeps rows with a repeated or dash key as separate items", () => {
+    const tabMap = mapping.tabs[0];
+    if (tabMap.kind !== "tasks") throw new Error();
+    const rows = mapTaskRows(tabMap, [
+      taskRows[0],
+      ["EDI", "Partner A - Orders In", "OPEN", "", "", "", ""],
+      ["EDI", "Partner B - Orders In", "OPEN", "", "", "", ""],
+      ["\u2014", "Storefront domain move", "OPEN", "", "", "", ""],
+      ["X09", "Only once", "OPEN", "", "", "", ""],
+    ]);
+    expect(rows.map((r) => r.ref)).toEqual([
+      "Delivery!EDI Partner A - Orders In", "Delivery!EDI Partner B - Orders In", "Delivery!Storefront domain move", "Delivery!X09",
+    ]);
+  });
+  it("rolls partner rows up to one partner with its earliest open step", () => {
+    const tabMap = mapping.tabs[1];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, partnerRows);
+    expect(ps).toHaveLength(2);
+    expect(ps[0]).toMatchObject({ name: "Partner A", nextStep: "Orders In", nextStepDate: "2026-11-15" });
+  });
+  it("skips a note row in the partner column", () => {
+    const tabMap = mapping.tabs[1];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [...partnerRows, ["The full partner list lives in a separate workbook and is not merged here.", "", "", "", ""]]);
+    expect(ps.map((p) => p.name)).toEqual(["Partner A", "Partner B"]);
+  });
+  it("reads a register's status, type and method for each partner", () => {
+    const tabMap = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status", type: "Type", method: "Method", nextStep: "Next step", nextStepDate: "Next step date" } }] }).tabs[0];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [
+      ["Partner", "Type", "Method", "Status", "Next step", "Next step date"],
+      ["Prasco", "Supplier", "AS2", "Testing", "Return test 810", "2026-12-01"],
+      ["MChest", "Customer", "SFTP (hosted)", "Testing", "", ""],
+      ["Carlsbad", "Supplier", "", "Out of Scope", "", ""],
+    ]);
+    expect(ps[0]).toMatchObject({ name: "Prasco", type: "supplier", method: "AS2", status: "Testing", nextStepDate: "2026-12-01" });
+    expect(ps[1]).toMatchObject({ type: "customer", method: "SFTP" });
+    expect(ps[2]).toMatchObject({ status: "Out of Scope", method: null });
+  });
+  it("reads a scope column: Yes is in scope, blank is not decided, no column leaves it unset", () => {
+    const tabMap = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status", inScope: "In scope" } }] }).tabs[0];
+    if (tabMap.kind !== "edi_partners") throw new Error();
+    const ps = mapPartnerRows(tabMap, [
+      ["Partner", "Status", "In scope"],
+      ["Prasco", "Testing", "Yes"],
+      ["Carlsbad", "Discovery", ""],
+      ["Ortho", "Discovery", "No"],
+    ]);
+    expect(ps.map((p) => p.inScope)).toEqual(["yes", "tbd", "no"]);
+    const plain = mappingSchema.parse({ tabs: [{ kind: "edi_partners", tab: "Connections", columns: { name: "Partner", status: "Status" } }] }).tabs[0];
+    if (plain.kind !== "edi_partners") throw new Error();
+    expect(mapPartnerRows(plain, [["Partner", "Status"], ["Prasco", "Testing"]])[0].inScope).toBeNull();
+  });
+  it("names the missing column when a mapping doesn't match the sheet", () => {
+    const tabMap = mapping.tabs[0];
+    if (tabMap.kind !== "tasks") throw new Error();
+    expect(() => mapTaskRows({ ...tabMap, columns: { ...tabMap.columns, due: "Due date" } }, taskRows)).toThrow(/no column "Due date"/);
+  });
+});

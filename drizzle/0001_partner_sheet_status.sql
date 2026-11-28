@@ -1,0 +1,1 @@
+ALTER TABLE "edi_partners" ADD COLUMN "sheet_status" text;
