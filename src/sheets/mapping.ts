@@ -5,9 +5,27 @@
 import { z } from "zod";
 import { GATES, STAGES, WORKSTREAMS, type TaskStatus } from "@/domain/types";
 
+/** Accepts a full Google Sheets address or a bare ID. Keeps only the ID; null when it is neither. */
+export function sheetIdOf(v: string): string | null {
+  const m = v.trim().match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{20,}$/.test(v.trim()) ? v.trim() : null;
+}
+
+/**
+ * Read this tab from another spreadsheet than the source's own (its address or ID).
+ * Lets one source pull a list kept in its own file while progress still joins by code.
+ */
+const otherSheet = z.string().transform((v, ctx) => {
+  const id = sheetIdOf(v);
+  if (!id) { ctx.addIssue({ code: "custom", message: "spreadsheet must be a Google Sheets address or ID" }); return z.NEVER; }
+  return id;
+}).optional();
+
 const taskTab = z.object({
   kind: z.literal("tasks"),
   tab: z.string().min(1),
+  spreadsheet: otherSheet,
   /** Give this tab's rows their own dashboard card under this name (a stakeholder's list, say). They stay out of the main open counts. */
   card: z.string().min(1).optional(),
   headerRow: z.number().int().min(1).default(1),
@@ -42,6 +60,7 @@ const taskTab = z.object({
 const partnerTab = z.object({
   kind: z.literal("edi_partners"),
   tab: z.string().min(1),
+  spreadsheet: otherSheet,
   headerRow: z.number().int().min(1).default(1),
   /** Stage for a partner the sheet adds; later reads never change a stage set in the app. */
   defaultStage: z.number().int().min(1).max(10).default(1),
@@ -66,6 +85,7 @@ const partnerTab = z.object({
 const setTab = z.object({
   kind: z.literal("edi_sets"),
   tab: z.string().min(1),
+  spreadsheet: otherSheet,
   headerRow: z.number().int().min(1).default(1),
   columns: z.object({
     /** Matched to a partner by name, in any of the client's sheets. */
@@ -88,6 +108,7 @@ const setTab = z.object({
 const progressTab = z.object({
   kind: z.literal("item_progress"),
   tab: z.string().min(1),
+  spreadsheet: otherSheet,
   headerRow: z.number().int().min(1).default(1),
   columns: z.object({
     /** The item's code, as the tasks tab's key column has it. */

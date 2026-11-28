@@ -151,6 +151,38 @@ describe("records and audit", () => {
     // The tab's own "NO" wins over the progress tab; the progress tab fills what the tab leaves blank.
     expect([q2.status, q2.deliveryId, q2.built, q2.demoed]).toEqual(["in_progress", null, "NO", "No"]);
   });
+  it("reads a tab from another spreadsheet, and still joins its progress by code", async () => {
+    const other = "AnotherSpreadsheetId_0123456789";
+    await db.insert(t.sheetSources).values({
+      id: "src6", projectId, label: "Two files", spreadsheetId: "main-file-id-0123456789",
+      mapping: { tabs: [
+        { kind: "tasks", tab: "Board", defaults: { workstream: "data", stage: "data" }, columns: { key: "Code", title: "Task", status: "State" } },
+        { kind: "tasks", tab: "List", spreadsheet: `https://docs.google.com/spreadsheets/d/${other}/edit#gid=1`, card: "Made-up list",
+          defaults: { workstream: "ecommerce", stage: "validate_go_live" }, columns: { key: "Ask", title: "Ask text", status: "Status" } },
+        { kind: "item_progress", tab: "List", spreadsheet: other, columns: { key: "Delivery", built: "Built" } },
+      ] },
+    });
+    const asked: string[] = [];
+    const reader = async (sheet: string, tabs: string[]) => {
+      asked.push(`${sheet}:${tabs.join("|")}`);
+      if (sheet === other) return new Map([["List", [["Ask", "Ask text", "Status", "Delivery", "Built"], ["Q1", "Made-up ask", "Open", "Z9", "YES"]]]]);
+      return new Map([["Board", [["Code", "Task", "State"], ["Z9", "Made-up board item", "OPEN"]]], ["List", [["Ask"], ["STALE"]]]]);
+    };
+    const r = await syncSource(db, "src6", "u1", reader);
+    expect(r).toMatchObject({ ok: true, tasks: { added: 2 } });
+    expect(asked).toEqual(["main-file-id-0123456789:Board", `${other}:List`]);
+    const rows = await db.select().from(t.tasks).where(eq(t.tasks.projectId, projectId));
+    expect(rows.find((x) => x.title === "Made-up board item")?.built).toBeTruthy();
+    expect(rows.some((x) => x.title === "STALE")).toBe(false);
+  });
+  it("names the other spreadsheet when it can't be read", async () => {
+    const r = await syncSource(db, "src6", "u1", async (sheet) => {
+      if (sheet !== "main-file-id-0123456789") throw new Error("The sheet isn't shared with the reader. Share it as Viewer.");
+      return new Map([["Board", [["Code", "Task", "State"]]]]);
+    });
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/other spreadsheet that holds the "List" tab/);
+  });
   it("reports a sheet that can't be read without throwing", async () => {
     const r = await syncSource(db, "src1", "u1", async () => { throw new Error("The sheet isn't shared"); });
     expect(r.ok).toBe(false);

@@ -29,7 +29,27 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
   const result: SyncResult = { ok: false, message: "", tasks: { added: 0, updated: 0, removed: 0 }, partners: { added: 0, updated: 0, removed: 0 }, sets: { added: 0, updated: 0, removed: 0, unmatched: [] }, progress: 0 };
   try {
     const mapping = mappingSchema.parse(src.mapping);
-    const values = await reader(src.spreadsheetId, mapping.tabs.map((x) => x.tab));
+    // A tab can live in another spreadsheet; read each spreadsheet once, keyed by spreadsheet and tab.
+    const sheetOf = (tab: { spreadsheet?: string }) => tab.spreadsheet ?? src.spreadsheetId;
+    const keyOf = (tab: { spreadsheet?: string; tab: string }) => `${sheetOf(tab)}\u0000${tab.tab}`;
+    const bySheet = new Map<string, string[]>();
+    for (const tab of mapping.tabs) {
+      const names = bySheet.get(sheetOf(tab)) ?? [];
+      if (!names.includes(tab.tab)) names.push(tab.tab);
+      bySheet.set(sheetOf(tab), names);
+    }
+    const values = new Map<string, string[][]>();
+    for (const [sheet, names] of bySheet) {
+      let got: Map<string, string[][]>;
+      try {
+        got = await reader(sheet, names);
+      } catch (e) {
+        if (sheet === src.spreadsheetId || !(e instanceof Error)) throw e;
+        throw new Error(`${e.message} (This is the other spreadsheet that holds the ${names.map((x) => `"${x}"`).join(", ")} tab${names.length === 1 ? "" : "s"}.)`);
+      }
+      for (const name of names) values.set(`${sheet}\u0000${name}`, got.get(name) ?? []);
+    }
+    const rowsOf = (tab: { spreadsheet?: string; tab: string }) => values.get(keyOf(tab)) ?? [];
     const users = await db.select().from(t.users);
     const userByName = new Map(users.map((u) => [u.name.toLowerCase(), u.id]));
     const seen = new Set<string>();
@@ -41,7 +61,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
     const now = new Date().toISOString();
 
     for (const tab of mapping.tabs) {
-      const rows = values.get(tab.tab) ?? [];
+      const rows = rowsOf(tab);
       if (tab.kind === "tasks") {
         for (const r of mapTaskRows(tab, rows)) {
           const ref = prefix + r.ref;
@@ -97,7 +117,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
       for (const p of [...partners].sort((a, b) => Number(!!a.ref?.startsWith(prefix)) - Number(!!b.ref?.startsWith(prefix)))) byName.set(p.name.trim().toLowerCase(), p.id);
       const unmatched = new Set<string>();
       for (const tab of setTabs) {
-        for (const x of mapSetRows(tab, values.get(tab.tab) ?? [])) {
+        for (const x of mapSetRows(tab, rowsOf(tab))) {
           const partnerId = byName.get(x.partner.toLowerCase());
           if (!partnerId) { unmatched.add(x.partner); continue; }
           const ref = prefix + x.ref;
@@ -127,7 +147,7 @@ export async function syncSource(db: DB, sourceId: string, actorId: string | nul
     const progress = new Map<string, ItemProgress>();
     for (const tab of mapping.tabs) {
       if (tab.kind !== "item_progress") continue;
-      for (const [code, p] of mapProgressRows(tab, values.get(tab.tab) ?? [])) {
+      for (const [code, p] of mapProgressRows(tab, rowsOf(tab))) {
         const have = progress.get(code) ?? { built: null, released: null, demoed: null, accepted: null };
         for (const step of PROGRESS_STEPS) have[step] ??= p[step];
         progress.set(code, have);

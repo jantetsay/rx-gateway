@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/db/client";
 import * as repo from "@/db/repo";
 import * as t from "@/db/schema";
-import { mappingSchema } from "@/sheets/mapping";
+import { mappingSchema, sheetIdOf } from "@/sheets/mapping";
 import { syncSource } from "@/sheets/sync";
 import { today } from "@/domain/calendar";
 import { checkColors, COLOR_DEFS, DEFAULT_COLORS, normalizeHex, type StatusColors } from "@/domain/colors";
@@ -179,12 +179,7 @@ export async function syncNow(f: FormData) {
   back(f, r.ok ? { ok: r.message } : { error: r.message });
 }
 
-/** Accepts a full Google Sheets address or a bare ID. Keeps only the ID. */
-function sheetId(v: string): string | null {
-  const m = v.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
-  if (m) return m[1];
-  return /^[A-Za-z0-9_-]{20,}$/.test(v) ? v : null;
-}
+const sheetId = sheetIdOf;
 
 /** Saves the status colors picked on Settings. A pick that fails a check is still saved, with a warning. */
 export async function saveColors(f: FormData) {
